@@ -71,7 +71,28 @@ const setRoomOv = (kind, v) => {
 const effModel = () => roomOv("model") || modelPick();
 const effEffort = () => roomOv("effort") || effortPick();
 
-const MODEL_SHORT = { default: "預設", fable: "Fable", opus: "Opus", sonnet: "Sonnet", haiku: "Haiku" };
+// 模型清單（唯一來源；server.py 的 MODELS 要對得上 key）。short 給右上角按鈕，name/desc 給設定頁。
+const MODEL_LIST = [
+  { key: "default",  short: "預設",       name: "預設",       desc: "跟著電腦上目前的設定走，不特別指定。" },
+  { key: "fable",    short: "Fable 5.1",  name: "Fable 5.1",  desc: "目前最聰明也最貴，留給真的很難的任務。" },
+  { key: "fable5",   short: "Fable 5",    name: "Fable 5",    desc: "上一版 Fable，一樣貴，5.1 出來後通常沒必要選它。" },
+  { key: "opus55",   short: "Opus 5.5",   name: "Opus 5.5",   desc: "最新的 Opus，比 Opus 5 便宜；預設想得比較少，要它認真就把思考力度調高。" },
+  { key: "opus",     short: "Opus 5",     name: "Opus 5",     desc: "聰明的主力，日常大部分工作用它。" },
+  { key: "opus48",   short: "Opus 4.8",   name: "Opus 4.8",   desc: "舊一代 Opus，想比對新舊表現時用。" },
+  { key: "opus47",   short: "Opus 4.7",   name: "Opus 4.7",   desc: "舊一代 Opus。" },
+  { key: "opus46",   short: "Opus 4.6",   name: "Opus 4.6",   desc: "舊一代 Opus。" },
+  { key: "sonnet",   short: "Sonnet 5",   name: "Sonnet 5",   desc: "速度快、夠聰明，一般問答和小修改。" },
+  { key: "sonnet46", short: "Sonnet 4.6", name: "Sonnet 4.6", desc: "舊一代 Sonnet。" },
+  { key: "haiku",    short: "Haiku 4.5",  name: "Haiku 4.5",  desc: "最快最省，查小事、簡單問題用。" },
+];
+const MODEL_SHORT = Object.fromEntries(MODEL_LIST.map((m) => [m.key, m.short]));
+(function renderModelOptions() {
+  $("#seg-room-model").innerHTML = MODEL_LIST.map((m) =>
+    '<button data-v="' + m.key + '">' + m.short + "</button>").join("");
+  $("#model-opts").innerHTML = MODEL_LIST.map((m) =>
+    '<label class="mode-opt"><input type="radio" name="model" value="' + m.key + '">' +
+    "<div><b>" + m.name + "</b><span>" + m.desc + "</span></div></label>").join("");
+})();
 const EFFORT_SHORT = { default: "", max: "最深", high: "多想", medium: "中", low: "快" };
 
 function updateRoomBtn() {
@@ -556,14 +577,13 @@ function openRoom(room, fromPop) {
   if (!fromPop) history.pushState({ chat: 1 }, "");
   stickBottom = true;
   if (room.sid) {
-    loadHistory().then(() => {
+    loadHistory().then((data) => {
       // 若這個房間有背景工作進行中 → 接上事件流；否則旁觀桌面那邊的進度
-      api("/api/status").then((st) => {
-        const info = st.running[current && current.sid];
-        if (info) attachRun(info.run_id, info.n_events, true, info.peer);
-        else startWatch();
-      }).catch(() => startWatch());
-    });
+      // （run 資訊由 history 一起帶回，省掉一趟 /api/status——手機常在慢連線上）
+      const info = data && data.run;
+      if (info) attachRun(info.run_id, info.n_events, true, info.peer);
+      else startWatch();
+    }).catch(() => startWatch());
   } else {
     msgsEl.innerHTML = '<div class="sys-note">新聊天室（' + esc(room.project_name) + '）— 送出第一句就開始</div>';
   }
@@ -622,6 +642,7 @@ async function loadHistory(before) {
     msgsEl.appendChild(frag);
     scrollBottom(true);
   }
+  return data;
 }
 
 function renderItem(it) {

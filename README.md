@@ -74,7 +74,7 @@ On iPhone Safari: Share → Add to Home Screen, and it behaves like a standalone
 
 - The included `start-server.cmd` is the simplest way to start it manually.
 - For "always on," register it as a Windows scheduled task (or any process supervisor you prefer) that runs `pythonw.exe server.py` at logon.
-- To restart: find and kill the `pythonw.exe` process bound to port 8899 in Task Manager, then run `start-server.cmd` again (or re-trigger your scheduled task).
+- To restart: double-click `restart-server.cmd`. It kills only the `pythonw.exe` whose command line points at this folder (not "whatever is listening on 8899" — that once took out an unrelated service), starts it again, and prints the new process's start time. Look at that time: a health-check 200 alone proves nothing, because a stale process answers 200 too. If you registered a scheduled task, re-trigger that instead.
 - Logs are written to `logs\server.log`.
 
 **Chat rooms:**
@@ -111,6 +111,7 @@ Tap "+" next to the composer to attach a photo (camera or library) or a document
 
 - Theme: Settings → Appearance (Auto / Light / Dark). All colors are CSS custom properties in `static/style.css` (`:root` for dark, `html[data-theme="light"]` for light).
 - Each room has its own model/effort override (top-right pill button in a conversation), stored in `localStorage`; "Default" falls back to the global choice in Settings.
+- The model picker offers every model the current Claude Code CLI accepts as `--model` (Fable 5.1/5, Opus 5.5/5/4.8/4.7/4.6, Sonnet 5/4.6, Haiku 4.5). The list lives in exactly one place — `MODEL_LIST` at the top of `static/app.js` (labels plus the one-line plain-language description shown in Settings) — and the short key → full model ID map is `MODEL_MAP` in `server.py`; change both when a new model ships. The descriptions are in Traditional Chinese; edit them to taste.
 - Voice input: the microphone button uses the Web Speech API; unsupported browsers get a hint to use the keyboard's built-in dictation key instead.
 - Usage panel (Settings → "plan limits & usage", collapsed by default): the top half shows your Anthropic plan limits (5-hour / weekly, same source as the desktop app's OAuth usage API, using the local `~/.claude/.credentials.json` token, cached 60s); the bottom half is real token usage computed by scanning your local `.jsonl` transcripts (today / last 7 days, deduplicated by request ID, includes scheduled/subagent runs).
 - Context bar at the top of a conversation shows current context usage for that session (turns orange above 70%, red above 85%), estimated from the model name and the last reported token usage.
@@ -178,7 +179,8 @@ A few constants near the top of `server.py` are also worth knowing: `PORT` (8899
 
 ## How it works
 
-- **Backend:** a single-file FastAPI app (`server.py`). No database — the chat list is read straight off the `.jsonl` transcript files Claude Code already writes under `~/.claude/projects/`, with an in-memory cache keyed on file size/mtime so re-scanning is cheap.
+- **Backend:** a single-file FastAPI app (`server.py`). No database — the chat list is read straight off the `.jsonl` transcript files Claude Code already writes under `~/.claude/projects/`, with an in-memory cache keyed on file size/mtime so re-scanning is cheap. The desktop app's per-session registry files (a few hundred small JSON files) are cached the same way, so the room list doesn't re-read all of them on every 5-second poll.
+- **Slow phone links:** responses over 1 KB are gzip-compressed (the room list and the JS bundle shrink 3–4×), the room list is warmed once at startup instead of on the first request, and every request from a non-loopback client is logged with its server-side time in `logs\server.log` (`req <ip> <method> <path> -> <status> <seconds>`). If the phone feels slow and those numbers are in the tens of milliseconds, the time is going into the network — typically a Tailscale DERP relay because neither side can punch through NAT; `tailscale ping <peer>` tells you whether you're direct or relayed, and a UDP 41641 port-forward on the server's router usually fixes it.
 - **Frontend:** plain HTML/CSS/JS in `static/` — no framework, no build step, no bundler.
 - **Sending a message** shells out to `claude -p --resume <session-id> --output-format stream-json --verbose <permission-flags>` and streams the resulting JSON events back to the browser over Server-Sent Events (`GET /api/run/{run_id}/events`), so the UI updates live as Claude works.
 - **Network exposure:** the server only binds to `127.0.0.1` plus (if detected) your machine's Tailscale IPv4 address — nothing else. It is not reachable from your regular home Wi-Fi/LAN or the public internet unless you explicitly change `bind_hosts()`.
@@ -259,6 +261,7 @@ Hooks are read when a session starts, so sessions already open keep the old beha
 - **Desktop-app sync relies on undocumented behaviour** (the per-session registry files and the `claude://resume` deep link). It works on desktop app 1.40609.1; if a newer release changes either, the room list falls back to transcripts-only and the sync buttons stop doing anything useful.
 - **Single machine, single user.** There's no concept of accounts; concurrency is capped globally (`MAX_CONCURRENT_RUNS`), not per-user.
 - **Reads transcripts from disk on every poll.** Cached by file size/mtime, so it stays cheap up to a few hundred sessions, but it wasn't built to scale past that.
+- **The UI is styled after iOS** (system colours, iMessage-style bubbles, frosted-glass bars, a segmented control for model/effort/appearance). It's all CSS custom properties in `static/style.css`, so retheming means editing the two token blocks at the top, but there is no theme switcher beyond light/dark.
 
 ## License
 

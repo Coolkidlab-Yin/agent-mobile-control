@@ -22,6 +22,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -187,6 +188,7 @@ PERM_READY = _write_perm_settings()
 # 磁碟上的 jsonl 匯進登錄（同一份紀錄，不複製），之後兩邊都寫同一個檔。直接寫登錄 json 桌面 app 不會即時吃到，實測過。
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _desktop_reg_cache = {"at": 0.0, "data": {}}
+_desktop_reg_files = {}   # 登錄檔路徑 -> (mtime_ns, size, cli sid, entry)
 DESKTOP_REG_TTL = 5.0
 
 
@@ -200,29 +202,47 @@ def _desktop_reg_dirs():
 
 
 def desktop_registry():
-    """cli session id -> {local_id, title, archived, cwd, last(epoch 秒)}；沒有桌面 app 就是空 dict。"""
+    """cli session id -> {local_id, title, archived, cwd, last(epoch 秒)}；沒有桌面 app 就是空 dict。
+    400 多個登錄檔每 5 秒全部重讀要 0.36 秒（手機列清單八成時間都在這）——改成按 (mtime, size) 只重讀有變的檔。"""
     now = time.time()
     if now - _desktop_reg_cache["at"] < DESKTOP_REG_TTL:
         return _desktop_reg_cache["data"]
     out = {}
+    seen = set()
     for root in _desktop_reg_dirs():
         for f in root.glob("*/*/local_*.json"):
             try:
+                st = f.stat()
+            except OSError:
+                continue
+            key = str(f)
+            seen.add(key)
+            hit = _desktop_reg_files.get(key)
+            if hit and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
+                if hit[2]:
+                    out[hit[2]] = hit[3]
+                continue
+            try:
                 d = json.loads(f.read_text("utf-8"))
             except Exception:
-                continue
+                d = None
             if not isinstance(d, dict):
+                _desktop_reg_files[key] = (st.st_mtime_ns, st.st_size, None, None)
                 continue
             local_id = d.get("sessionId") or f.stem
             cli = d.get("cliSessionId") or local_id.replace("local_", "", 1)
             last = d.get("lastActivityAt") or d.get("createdAt") or 0
-            out[cli] = {
+            entry = {
                 "local_id": local_id,
                 "title": _clean_title(d.get("title") or ""),
                 "archived": bool(d.get("isArchived")),
                 "cwd": d.get("cwd") or "",
                 "last": (last / 1000.0) if isinstance(last, (int, float)) else 0,
             }
+            _desktop_reg_files[key] = (st.st_mtime_ns, st.st_size, cli, entry)
+            out[cli] = entry
+    for k in [k for k in _desktop_reg_files if k not in seen]:
+        del _desktop_reg_files[k]
     _desktop_reg_cache.update(at=now, data=out)
     return out
 
@@ -1836,6 +1856,8 @@ async def run_peer(run, text, peer, path, fallback=None):
 # ---------- API ----------
 
 app = FastAPI(title="claude-chat")
+# 手機常繞 Tailscale 中繼（100~500ms RTT），JSON/JS 壓縮後小 3~4 倍，少跑好幾趟
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.on_event("startup")
@@ -1850,6 +1872,11 @@ async def _peer_startup():
     except Exception as e:
         _peer_unregister()
         log.warning("peer messaging disabled: %s", e)
+
+
+@app.on_event("startup")
+async def _warm_rooms():
+    asyncio.get_event_loop().run_in_executor(None, scan_rooms)
 
 
 @app.on_event("shutdown")
@@ -1871,11 +1898,30 @@ async def require_token(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def _timing(request: Request, call_next):
+    """手機那頭喊慢時的量尺：非本機來源每個請求都記耗時；本機只記超過 1 秒的。"""
+    t0 = time.perf_counter()
+    resp = await call_next(request)
+    dt = time.perf_counter() - t0
+    client = request.client.host if request.client else ""
+    if client not in ("127.0.0.1", "::1") or dt > 1.0:
+        log.info("req %s %s %s -> %s %.3fs", client, request.method, request.url.path, resp.status_code, dt)
+    return resp
+
+
+# key 是手機 UI 存的短名；值是 CLI --model 認得的完整 ID。清單與說明在 static/app.js 的 MODEL_LIST，兩邊要一起改。
 MODELS = {
-    "fable": "claude-fable-5",
+    "fable": "claude-fable-5-1",
+    "fable5": "claude-fable-5",
+    "opus55": "claude-opus-5-5",
     "opus": "claude-opus-5",
+    "opus48": "claude-opus-4-8",
+    "opus47": "claude-opus-4-7",
+    "opus46": "claude-opus-4-6",
     "sonnet": "claude-sonnet-5",
-    "haiku": "claude-haiku-4-5-20251001",
+    "sonnet46": "claude-sonnet-4-6",
+    "haiku": "claude-haiku-4-5",
 }
 EFFORTS = {"low", "medium", "high", "max"}
 
@@ -2111,6 +2157,8 @@ def history(slug: str, sid: str, before: int | None = None, limit: int = 120):
     run = RUNS.get(out["running_run_id"]) if out["running_run_id"] else None
     out["n_events"] = len(run.events) if run else 0
     out["busy"] = (not eng) and _room_busy(f)
+    out["run"] = ({"run_id": out["running_run_id"], "n_events": out["n_events"],
+                   "peer": bool(getattr(run, "peer", False))} if run else None)
     return out
 
 

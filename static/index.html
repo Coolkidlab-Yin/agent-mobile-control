@@ -6,12 +6,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0b0e17">
+<meta name="theme-color" content="#000000">
 <title>Claude 聊天室</title>
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
 <link rel="icon" type="image/png" href="/static/icon-192.png">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=m2">
 </head>
 <body>
 
@@ -95,9 +95,7 @@
   <div class="sheet">
     <div class="sheet-title">這個聊天室怎麼回</div>
     <div class="setting-label">模型（只影響這個聊天室）</div>
-    <div class="seg" id="seg-room-model">
-      <button data-v="default">預設</button><button data-v="fable">Fable</button><button data-v="opus">Opus</button><button data-v="sonnet">Sonnet</button><button data-v="haiku">Haiku</button>
-    </div>
+    <div class="seg wrap" id="seg-room-model"></div>
     <div class="setting-label">思考力度</div>
     <div class="seg" id="seg-room-effort">
       <button data-v="default">預設</button><button data-v="max">最深</button><button data-v="high">多</button><button data-v="medium">中</button><button data-v="low">快</button>
@@ -129,18 +127,7 @@
     </div>
 
     <div class="setting-label">用哪個模型回答（全域預設；聊天室右上角可個別調）</div>
-    <div class="mode-opts compact">
-      <label class="mode-opt"><input type="radio" name="model" value="default">
-        <div><b>預設</b><span>跟著電腦上目前的設定走，不特別指定。</span></div></label>
-      <label class="mode-opt"><input type="radio" name="model" value="fable">
-        <div><b>Fable 5</b><span>最聰明也最貴，留給真的很難的任務。</span></div></label>
-      <label class="mode-opt"><input type="radio" name="model" value="opus">
-        <div><b>Opus 5</b><span>聰明的主力，日常大部分工作用它。</span></div></label>
-      <label class="mode-opt"><input type="radio" name="model" value="sonnet">
-        <div><b>Sonnet 5</b><span>速度快、夠聰明，一般問答和小修改。</span></div></label>
-      <label class="mode-opt"><input type="radio" name="model" value="haiku">
-        <div><b>Haiku 4.5</b><span>最快最省，查小事、簡單問題用。</span></div></label>
-    </div>
+    <div class="mode-opts compact" id="model-opts"></div>
 
     <div class="setting-label">思考力度（effort）</div>
     <div class="mode-opts compact">
@@ -197,6 +184,6 @@
   </div>
 </div>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=m2"></script>
 </body>
 </html>

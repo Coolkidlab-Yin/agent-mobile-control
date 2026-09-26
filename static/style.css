@@ -4,101 +4,106 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
 
 :root {
   color-scheme: dark;
-  --bg: #0b0e17;
-  --tint1: #18224422;
-  --tint2: #241a4422;
-  --text: #e7ecf5;
-  --dim: #8b94ad;
-  --line: #232c47;
-  --panel: #121728;
-  --panel2: #1a2138;
-  --panel3: #222b48;
-  --bar-bg: #0e1322cc;
-  --sheet-bg: #141a2e;
-  --accent: #6f9dff;
-  --link: #8db4ff;
-  --user-bub: linear-gradient(135deg, #3b6cf0, #5a48e0);
+  --bg: #000000;
+  --tint1: transparent;
+  --tint2: transparent;
+  --text: #ffffff;
+  --dim: #8e8e93;
+  --line: #38383a;
+  --panel: #1c1c1e;
+  --panel2: #2c2c2e;
+  --panel3: #3a3a3c;
+  --fill: rgba(118,118,128,.24);
+  --bar-bg: rgba(20,20,22,.72);
+  --sheet-bg: rgba(28,28,30,.92);
+  --seg-on: #636366;
+  --accent: #0a84ff;
+  --link: #0a84ff;
+  --user-bub: #0a84ff;
   --user-text: #ffffff;
-  --user-code: #ffffff22;
-  --ai-bub: #1b2237;
-  --ai-line: #232c4788;
-  --chip-bg: #131a2e;
-  --chip-line: #232c47;
-  --chip-text: #93a2c8;
-  --chip-strong: #b9c6e8;
-  --code-bg: #0d1220;
-  --pre-bg: #0a0e1a;
-  --pre-text: #e7ecf5;
-  --ok: #7ee2a8;
-  --bad: #ff8f8f;
-  --tag-bg: #223055;
-  --tag-text: #9db4e8;
-  --live-bg: #173a2a;
-  --live-text: #7ee2a8;
-  --arch-bg: #33251a;
-  --arch-text: #d8a878;
-  --time: #566082;
-  --cta: linear-gradient(135deg, #3b6cf0, #5a48e0);
+  --user-code: rgba(255,255,255,.22);
+  --ai-bub: #262629;
+  --ai-line: transparent;
+  --chip-bg: rgba(118,118,128,.24);
+  --chip-line: transparent;
+  --chip-text: #aeaeb2;
+  --chip-strong: #ffffff;
+  --code-bg: rgba(118,118,128,.24);
+  --pre-bg: #1c1c1e;
+  --pre-text: #f2f2f7;
+  --ok: #30d158;
+  --bad: #ff453a;
+  --tag-bg: rgba(118,118,128,.24);
+  --tag-text: #aeaeb2;
+  --live-bg: rgba(48,209,88,.18);
+  --live-text: #30d158;
+  --arch-bg: rgba(255,159,10,.18);
+  --arch-text: #ff9f0a;
+  --time: #6c6c70;
+  --cta: #0a84ff;
   --cta-text: #ffffff;
-  --cta-shadow: #3b5ce066;
-  --stop-bg: #56273a;
-  --stop-text: #ff9f9f;
-  --av-s: 48%;
-  --av-l1: 38%;
-  --av-l2: 22%;
-  --swipe-arch: #33436e;
-  --swipe-del: #8c3040;
-  --heading-font: "Noto Serif TC", "Songti TC", "PMingLiU", Georgia, "Times New Roman", serif;
+  --cta-shadow: rgba(10,132,255,.35);
+  --stop-bg: rgba(255,69,58,.2);
+  --stop-text: #ff453a;
+  --av-s: 30%;
+  --av-l1: 52%;
+  --av-l2: 36%;
+  --swipe-arch: #636366;
+  --swipe-del: #ff453a;
+  --glass: saturate(180%) blur(20px);
+  --heading-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang TC", "Helvetica Neue", "Microsoft JhengHei", system-ui, sans-serif;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 html[data-theme="light"] {
   color-scheme: light;
-  --bg: #efebe2;
-  --tint1: #0000000a;
-  --tint2: #b3372a0d;
-  --text: #191613;
-  --dim: #6f675a;
-  --line: #d9d2c2;
-  --panel: #f7f4ea;
-  --panel2: #ede8db;
-  --panel3: #e5dfcf;
-  --bar-bg: #efebe2e8;
-  --sheet-bg: #f5f1e7;
-  --accent: #b3372a;
-  --link: #b3372a;
-  --user-bub: #1a1712;
-  --user-text: #f5f1e7;
-  --user-code: #ffffff2e;
-  --ai-bub: #faf8f1;
-  --ai-line: #ddd6c5;
-  --chip-bg: #f2eee2;
-  --chip-line: #d9d2c2;
-  --chip-text: #6f675a;
-  --chip-strong: #3a342b;
-  --code-bg: #e8e3d4;
-  --pre-bg: #211d17;
-  --pre-text: #efebe2;
-  --ok: #2f7a4d;
-  --bad: #b3372a;
-  --tag-bg: #e5dfcf;
-  --tag-text: #6f675a;
-  --live-bg: #dce8da;
-  --live-text: #2f7a4d;
-  --arch-bg: #ead9c4;
-  --arch-text: #8a5a2a;
-  --time: #98907e;
-  --cta: #1a1712;
-  --cta-text: #efebe2;
-  --cta-shadow: #1a171233;
-  --stop-bg: #ead0c8;
-  --stop-text: #b3372a;
+  --bg: #ffffff;
+  --tint1: transparent;
+  --tint2: transparent;
+  --text: #000000;
+  --dim: #8e8e93;
+  --line: rgba(60,60,67,.2);
+  --panel: #ffffff;
+  --panel2: #f2f2f7;
+  --panel3: #e5e5ea;
+  --fill: rgba(118,118,128,.12);
+  --bar-bg: rgba(249,249,249,.78);
+  --sheet-bg: rgba(255,255,255,.94);
+  --seg-on: #ffffff;
+  --accent: #007aff;
+  --link: #007aff;
+  --user-bub: #007aff;
+  --user-text: #ffffff;
+  --user-code: rgba(255,255,255,.25);
+  --ai-bub: #e9e9eb;
+  --ai-line: transparent;
+  --chip-bg: rgba(118,118,128,.12);
+  --chip-line: transparent;
+  --chip-text: #636366;
+  --chip-strong: #000000;
+  --code-bg: rgba(118,118,128,.12);
+  --pre-bg: #f2f2f7;
+  --pre-text: #1c1c1e;
+  --ok: #34c759;
+  --bad: #ff3b30;
+  --tag-bg: rgba(118,118,128,.12);
+  --tag-text: #636366;
+  --live-bg: rgba(52,199,89,.16);
+  --live-text: #248a3d;
+  --arch-bg: rgba(255,149,0,.16);
+  --arch-text: #c76f00;
+  --time: #8e8e93;
+  --cta: #007aff;
+  --cta-text: #ffffff;
+  --cta-shadow: rgba(0,122,255,.3);
+  --stop-bg: rgba(255,59,48,.14);
+  --stop-text: #ff3b30;
   --av-s: 26%;
-  --av-l1: 30%;
-  --av-l2: 16%;
-  --swipe-arch: #1a1712;
-  --swipe-del: #b3372a;
+  --av-l1: 62%;
+  --av-l2: 48%;
+  --swipe-arch: #8e8e93;
+  --swipe-del: #ff3b30;
 }
 
 body {
@@ -593,3 +598,141 @@ body {
 .usage-sub .u-v { font-weight: 400; }
 
 .hidden { display: none !important; }
+
+
+/* ===================================================================
+   Apple 風格層（iOS 原生感 ＋ 毛玻璃）
+   上面的規則沿用不動，這裡只覆寫「形狀、材質、字級」讓它像原生 App。
+   毛玻璃只給浮在內容上的元件：頂欄／用量條／附件列／輸入列／底部面板／回底按鈕。
+   =================================================================== */
+
+body { font-family: var(--heading-font); letter-spacing: -.01em; }
+
+/* 底：拿掉星雲漸層，回到 iOS 的純色底；轉場用 iOS 的緩動曲線 */
+.screen {
+  background: var(--bg);
+  transition: transform .42s cubic-bezier(.32,.72,0,1);
+}
+
+/* ---------- 毛玻璃 ---------- */
+.bar, .ctx-bar, .attach-strip, .composer {
+  background: var(--bar-bg);
+  backdrop-filter: var(--glass);
+  -webkit-backdrop-filter: var(--glass);
+}
+.bar { border-bottom: .5px solid var(--line); }
+.composer, .attach-strip, .ctx-bar { border-color: var(--line); border-width: .5px; }
+
+/* ---------- 頂欄 ---------- */
+#screen-list .bar { padding-bottom: 2px; border-bottom: none; }
+#screen-list .bar-title { font-size: 34px; font-weight: 700; letter-spacing: -.022em; }
+.bar-title.small { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.bar-sub { font-size: 12px; }
+.icon-btn { color: var(--accent); opacity: 1; }
+.icon-btn:active { background: none; opacity: .4; }
+.icon-btn.back { font-size: 32px; font-weight: 300; }
+.model-btn {
+  border: none; background: var(--fill); color: var(--accent);
+  font-size: 13px; font-weight: 500; border-radius: 16px;
+}
+
+/* ---------- 搜尋 / chips ---------- */
+.search-wrap { padding: 6px 14px 8px; }
+#search {
+  background: var(--fill); border: none; border-radius: 10px;
+  padding: 8px 12px; font-size: 17px;
+}
+.chip {
+  border: none; background: var(--fill); color: var(--chip-text);
+  font-size: 13.5px; font-weight: 500; padding: 6px 14px;
+}
+.chip.on { background: var(--accent); color: #fff; }
+
+/* ---------- 聊天室清單：圓頭像 + 內縮分隔線 ---------- */
+.room-wrap { border-bottom: none; }
+.room { padding: 10px 14px; }
+.room:active { background: var(--fill); }
+.room::after {
+  content: ""; position: absolute; left: 74px; right: 0; bottom: 0;
+  height: .5px; background: var(--line);
+}
+.room-wrap:last-child .room::after { display: none; }
+.avatar { border-radius: 50%; box-shadow: none; font-weight: 600; font-size: 18px; }
+.room-title { font-size: 16px; font-weight: 600; letter-spacing: -.012em; }
+.room-preview { font-size: 14px; line-height: 1.32; }
+.room-time { font-size: 12px; }
+.tag { font-size: 11px; padding: 2px 8px; }
+
+/* ---------- 訊息 ---------- */
+.messages { gap: 6px; }
+.bubble { border-radius: 20px; padding: 8px 14px; font-size: 16.5px; line-height: 1.38; }
+.msg.ai .bubble { border: none; }
+.msg-time { font-size: 11px; }
+.tool-chip, .info-chip, .load-more, .file-link { border: none; background: var(--fill); }
+.jump-bottom {
+  border: .5px solid var(--line); background: var(--bar-bg);
+  backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass);
+}
+
+/* ---------- 卡片與清單項：iOS 的無框填色圓角 ---------- */
+.ask-opt, .mode-opt, .project-item, .action-btn, .collapse-head, .usage-box, .key-row {
+  border: none; background: var(--panel2); border-radius: 12px;
+}
+.action-btn.danger { background: var(--panel2); color: var(--bad); }
+.ask-opt.on, .mode-opt:has(input:checked) {
+  background: var(--panel3); box-shadow: inset 0 0 0 2px var(--accent);
+}
+.ask-card { border-radius: 18px; border-width: 1.5px; }
+.ask-multi-ok, .ask-free .ask-send, .key-btns button { border-radius: 12px; font-weight: 600; }
+.ask-free input, .key-in, .model-in { border: none; background: var(--fill); border-radius: 10px; }
+.ask-skip { border: none; background: var(--fill); }
+.perm-banner { border-radius: 12px; }
+
+/* ---------- 分段選鈕：iOS segmented control ---------- */
+.seg {
+  gap: 2px; background: var(--fill); border-radius: 9px; padding: 2px; flex-wrap: nowrap;
+}
+.seg button {
+  flex: 1 1 0; min-width: 0; border: none; background: transparent;
+  border-radius: 7px; padding: 6px 2px; font-size: 13px; font-weight: 500; color: var(--text);
+}
+.seg button.on {
+  background: var(--seg-on); color: var(--text); font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,.18);
+}
+
+/* ---------- 輸入列 ---------- */
+#input { border: none; background: var(--fill); border-radius: 18px; padding: 8px 14px; font-size: 17px; }
+.attach-btn { width: 36px; height: 36px; border: none; background: var(--fill); font-size: 20px; }
+.send-btn { width: 36px; height: 36px; font-size: 17px; }
+.send-btn:active, .fab:active { transform: scale(.92); }
+.fab { border-radius: 50%; font-size: 26px; box-shadow: 0 6px 20px var(--cta-shadow); }
+
+/* ---------- 底部面板 ---------- */
+.sheet-mask { background: rgba(0,0,0,.4); }
+.sheet {
+  border-radius: 14px 14px 0 0; border-top: none;
+  background: var(--sheet-bg);
+  backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass);
+}
+.sheet::before {
+  content: ""; display: block; width: 36px; height: 5px; border-radius: 3px;
+  background: var(--dim); opacity: .35; margin: -10px auto 14px;
+}
+.sheet-title { font-size: 20px; font-weight: 700; letter-spacing: -.02em; text-align: center; }
+.sheet-cancel {
+  border: none; background: var(--panel2); color: var(--accent);
+  font-weight: 600; border-radius: 12px; font-size: 16px;
+}
+.setting-label { font-size: 13px; letter-spacing: .01em; }
+
+/* ---------- 進度條 ---------- */
+.ctx-track, .lim-track { background: var(--fill); }
+
+/* ---------- 觸壓回饋 ---------- */
+.chip:active, .ask-opt:active, .project-item:active, .action-btn:active,
+.seg button:active, .attach-btn:active, .sheet-cancel:active, .model-btn:active { opacity: .55; }
+
+/* 模型選單 11 個，換行排成格子 */
+.seg.wrap { flex-wrap: wrap; gap: 4px; }
+.seg.wrap button { flex: 1 1 30%; min-width: 30%; }
