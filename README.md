@@ -203,6 +203,8 @@ question channel of its own:
    within ~9 minutes, the model is told to proceed with a sensible default and say what
    it assumed.
 
+Two things that bite in practice: since Claude Code 2.1.283 the built-in tool is not just absent in `-p` mode but actively refused ("nobody in this session can answer it"), so a hook on it never fires; and the model may see `mcp__chat__ask_user` only as a *deferred* tool (name without a schema), so the injected system prompt now tells it to load the schema with `ToolSearch` before calling. If your global `CLAUDE.md` tells the model to "always use AskUserQuestion", that instruction wins over the injected note — scope it to desktop sessions.
+
 No setup needed — `ask-mcp-config.json` is regenerated on server start with your
 machine's `node` path, and the channel only exists for runs this server spawns (the
 desktop app and plain CLI are untouched).
@@ -250,6 +252,7 @@ Hooks are read when a session starts, so sessions already open keep the old beha
 ### Troubleshooting
 
 - **"claude" can't be found / server won't start a run:** the executable lookup logic lives in `resolve_claude_cmd()` near the top of `server.py`. It tries, in order: the Claude Code CLI's own `claude.exe`, then `node` + `cli.js` directly, then falls back to `claude.cmd` via `cmd.exe`. If a Claude Code / npm update moves things, start here.
+- **The phone shows a permission/question card for something you already answered on the desktop, sometimes several steps old:** the server decides "already answered" by finding the tool result in the session transcript. It now scans from 1 MB before the card was created to the end of the file; older builds looked only at the last 256 KB, which a busy desktop session outgrows within minutes, so the card lingered for the full hour TTL.
 - **Nothing shows up from your phone:** confirm Tailscale is installed, running, and logged into the same tailnet as your phone; confirm `tailscale ip -4` on the server machine returns a `100.x.x.x` address; confirm you're using that IP (not `127.0.0.1`) from the phone.
 
 ## Limitations

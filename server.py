@@ -135,8 +135,11 @@ ASK_SYSTEM_PROMPT = (
     "你正在使用者的手機聊天介面（claude-chat）裡執行。需要問使用者選擇題"
     "（釐清模糊需求、做決定、在多個做法中挑一個）時，呼叫 mcp__chat__ask_user 工具："
     "手機會顯示可點選的選項卡，使用者的選擇會當成工具結果回傳給你。"
-    "不要呼叫 AskUserQuestion（這個環境沒有那個工具），"
-    "也不要用純文字列出選項乾等回覆。"
+    "這個工具可能是 deferred（只列出名字、沒有參數 schema）："
+    "先用 ToolSearch 查 select:mcp__chat__ask_user 把 schema 載進來，再呼叫它。"
+    "不要呼叫 AskUserQuestion：CLI 2.1.283 起 -p session 的那個工具被官方停用，"
+    "呼叫只會拿到「nobody in this session can answer it」，攔它的 PreToolUse hook 也不會被觸發。"
+    "也不要用純文字列出選項乾等回覆——使用者在手機上只能點卡片。"
 )
 
 
@@ -2589,8 +2592,14 @@ def _desktop_answered(p):
         return None
     try:
         size = g[0].stat().st_size
+        # 固定只翻檔尾 256KB 在忙碌的對話會漏：10-01 一個 7.9MB 的 session，卡片建立後又長了 1MB，
+        # 桌面早答過的 tool_result 落在窗口外，卡片就掛滿一小時、手機跳「好幾步前」的題。
+        # 改成第一次對帳時記下當時檔尾往前 1MB 的位置，之後一律從那裡讀到檔尾，檔案再長都涵蓋得到。
+        start = p.get("scan_from")
+        if start is None:
+            start = p["scan_from"] = max(0, size - 1024 * 1024)
         with open(g[0], "rb") as f:
-            f.seek(max(0, size - 256 * 1024))
+            f.seek(start)
             lines = f.read().decode("utf-8", "replace").splitlines()
     except OSError:
         return None
