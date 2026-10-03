@@ -92,6 +92,14 @@ Swipe left on a room (or long-press / right-click) to reveal **Archive** and **D
 
 Files the agent hands over with the desktop app's SendUserFile tool are shown too (the tool call is turned into a text line with the caption and the full paths). Windows-style file paths that show up in a reply (e.g. `C:\Users\you\Desktop\screenshot.png`) are automatically turned into inline previews — images render inline, video and audio get a player. Anything that a browser could execute as a page (HTML, SVG, XML, JS) is always sent as a download instead, so a file the agent generated can't run as script inside this app's origin.
 
+Tapping a file never navigates away from the app. That matters once you add it to the Home Screen: a standalone web app has no browser chrome, so a plain link to `/api/file` would replace the whole app with the file and leave you no way back. Instead:
+
+- **Images** open in a full-screen viewer: close with ✕, by tapping the dark background, or by swiping down; tap the image to toggle actual size (the page disables pinch-zoom, so this is how you read a screenshot).
+- **Other files** open in a viewer sheet with a title bar and ✕: `.md` is rendered with the chat's own Markdown renderer, `.txt`/`.csv`/`.json` as monospaced text (JSON pretty-printed, capped at the first million characters), `.pdf` in an iframe, video/audio in a player. `.html` is shown in an `<iframe sandbox>` with no `allow-scripts` and no `allow-same-origin`, so you see the layout but nothing in it runs and it cannot reach the app.
+- Opening a viewer pushes a history entry, so any back action (the ‹ button, the system edge-swipe, Android's back button) closes the viewer first and only a second back leaves the conversation.
+
+**Swipe back:** in a conversation, swipe right anywhere to return to the list. The screen follows your finger; past a third of the width or a quick flick it leaves, otherwise it springs back. It stays out of the way inside horizontally scrollable blocks (wide code, tables), text fields, media players, and while a viewer is open. The browser's own overscroll-to-go-back is disabled (`overscroll-behavior-x: none`) so it can't fire while you scroll a code block sideways.
+
 This is served by `GET /api/file?path=...`, which only reads from an allow-list:
 
 - **By default the allow-list contains exactly one folder: this app's own `uploads/`.** Nothing else on your disk is reachable through this endpoint.

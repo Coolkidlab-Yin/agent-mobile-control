@@ -736,3 +736,59 @@ body { font-family: var(--heading-font); letter-spacing: -.01em; }
 /* 模型選單 11 個，換行排成格子 */
 .seg.wrap { flex-wrap: wrap; gap: 4px; }
 .seg.wrap button { flex: 1 1 30%; min-width: 30%; }
+
+/* ---------- 看圖層（深淺色都用黑底，跟系統相簿一樣） ---------- */
+.lightbox {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .94);
+  overflow: auto; overscroll-behavior: contain;
+  transition: opacity .2s;
+}
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
+.lightbox.zoom { display: block; }
+.lightbox.zoom img { max-width: none; max-height: none; cursor: zoom-out; }
+.lb-close {
+  position: fixed; z-index: 41;
+  top: calc(env(safe-area-inset-top) + 10px); right: 14px;
+  width: 36px; height: 36px; border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, .2); color: #fff; font-size: 17px; line-height: 36px;
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+
+/* 返回手勢由 app.js 自己做；關掉瀏覽器的「橫向滑到底＝上一頁」，
+   不然在橫捲到頭的程式碼區塊裡往右滑會被瀏覽器當成返回（安卓 Chrome 實測會） */
+html, body { overscroll-behavior-x: none; }
+
+/* ---------- 檔案檢視層 ---------- */
+.docview {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; flex-direction: column;
+  background: var(--bg); color: var(--text);
+}
+.dv-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: calc(env(safe-area-inset-top) + 8px) 12px 8px 16px;
+  background: var(--bar-bg); -webkit-backdrop-filter: var(--glass); backdrop-filter: var(--glass);
+  border-bottom: .5px solid var(--sep, rgba(128, 128, 128, .3));
+}
+.dv-title { flex: 1; min-width: 0; font-weight: 600; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-close {
+  flex: none; width: 32px; height: 32px; border: none; border-radius: 50%;
+  background: var(--fill, rgba(128, 128, 128, .2)); color: var(--text); font-size: 15px;
+}
+.dv-body {
+  flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px calc(env(safe-area-inset-bottom) + 14px);
+}
+.dv-text {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.docview .bubble.dv-md { max-width: none; background: none; box-shadow: none; padding: 0; border-radius: 0; color: var(--text); }
+.dv-body.dv-frame { padding: 0; display: flex; flex-direction: column; }
+.dv-frame iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+.dv-body.dv-media { display: flex; align-items: center; justify-content: center; background: #000; }
+.dv-media video { max-width: 100%; max-height: 100%; }
+.dv-media audio { width: 100%; }
