@@ -48,3 +48,6 @@ perm-settings.json
 
 # Room titles renamed from the phone (runtime state)
 web-titles.json
+
+# Atomic-write leftovers (config.json is written to a .tmp then renamed)
+*.json.tmp

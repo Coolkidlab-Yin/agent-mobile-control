@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=9
+ruff>=0.16
+pillow>=12.3   # make_icon.py 重產圖示才需要

@@ -11,7 +11,7 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
 <link rel="icon" type="image/png" href="/static/icon-192.png">
-<link rel="stylesheet" href="/static/style.css?v=m4">
+<link rel="stylesheet" href="/static/style.css?v=m5">
 </head>
 <body>
 
@@ -45,6 +45,7 @@
     <div class="ctx-track"><i id="ctx-fill"></i></div>
     <span id="ctx-label"></span>
   </div>
+  <button id="bg-chip" class="bg-chip hidden"></button>
   <div id="messages" class="messages"></div>
   <div id="jump-bottom" class="jump-bottom hidden">↓</div>
   <div id="attach-strip" class="attach-strip hidden"></div>
@@ -87,6 +88,15 @@
       <button id="btn-delete" class="action-btn danger">🗑 刪除（移到垃圾桶）</button>
     </div>
     <button class="sheet-cancel" data-close="sheet-actions">取消</button>
+  </div>
+</div>
+
+<!-- 這個對話在背景跑的指令／子代理／工作流程 -->
+<div id="sheet-bg" class="sheet-mask hidden">
+  <div class="sheet">
+    <div class="sheet-title">背景任務</div>
+    <div id="bg-list"></div>
+    <button class="sheet-cancel" data-close="sheet-bg">關閉</button>
   </div>
 </div>
 
@@ -184,6 +194,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=m4"></script>
+<script src="/static/app.js?v=m6"></script>
 </body>
 </html>

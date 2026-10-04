@@ -1,0 +1,16 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 130
+extend-exclude = ["static", "trash", "uploads"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["B008"]   # FastAPI 的 File(...) 預設參數就是這樣寫的
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "ignore:(?s).*on_event is deprecated:DeprecationWarning",   # FastAPI 的 on_event 還能用；改成 lifespan 時把這行拿掉
+    "ignore:Using .httpx. with .starlette.testclient. is deprecated",   # 測試用的 TestClient 內部警告，與我們的程式無關
+]

@@ -2,6 +2,7 @@
 """產生 App icon：深宇宙底 + 發光四芒星。"""
 from PIL import Image, ImageDraw, ImageFilter
 
+
 def star(draw, cx, cy, r_long, r_short, fill):
     pts = []
     for i in range(8):
@@ -33,7 +34,8 @@ def make(size):
     gd = ImageDraw.Draw(glow)
     star(gd, size / 2, size / 2, size * 0.34, size * 0.10, "#7fb0ff")
     glow = glow.filter(ImageFilter.GaussianBlur(size * 0.06))
-    img = Image.blend(img, Image.composite(glow, Image.new("RGB", img.size, "#000"), glow.convert("L").point(lambda p: min(255, p * 2))), 0.55)
+    mask = glow.convert("L").point(lambda p: min(255, p * 2))
+    img = Image.blend(img, Image.composite(glow, Image.new("RGB", img.size, "#000"), mask), 0.55)
     d = ImageDraw.Draw(img)
     star(d, size / 2, size / 2, size * 0.30, size * 0.085, "#eaf2ff")
     star(d, size / 2 + size * 0.21, size / 2 - size * 0.22, size * 0.09, size * 0.026, "#cfe0ff")

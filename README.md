@@ -47,9 +47,10 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 ```
 
-Regenerating the app icons is optional — the repo already ships with `static/icon-*.png` — but if you want to change the look:
+Regenerating the app icons is optional — the repo already ships with `static/icon-*.png` — but if you want to change the look (Pillow comes from `requirements-dev.txt`, together with the lint and test tools):
 
 ```bat
+.venv\Scripts\pip install -r requirements-dev.txt
 .venv\Scripts\python make_icon.py
 ```
 
@@ -106,6 +107,8 @@ This is served by `GET /api/file?path=...`, which only reads from an allow-list:
 - To allow more folders, add absolute paths to `extra_file_roots` in `config.json`.
 - Setting `allow_home_reads: true` adds your entire home directory. That is convenient — the agent can show you anything it produced anywhere — but it also exposes `~/.claude/.credentials.json`, SSH keys, and every private document under your home folder to whoever can reach the server. Only do this on a network where you are the only participant.
 
+**Background tasks:** commands the agent runs in the background (`run_in_background`, or a command that hit its time limit and was moved there), background subagents and workflows used to be invisible from the phone — the room just looked stuck. While a Claude room is open the phone now polls `GET /api/bg/{slug}/{sid}` every 5 seconds and, whenever there is something to show, puts a status bar under the context bar: "⏳ 2 background tasks running". If the quietest of them has produced no output for more than two minutes the bar turns orange and says for how long — usually the answer to "why is it stuck". Tap it for the list: kind (command / subagent / workflow), label, running time, time since it last showed signs of life, the last 8 lines of a command's output (a subagent shows its last 5 actions), and the completion notice for finished ones, which stay listed for 6 hours. Detection reads the transcript incrementally and is deliberately strict about two things that produced false positives: a start message only counts at the very beginning of a tool result (the same text merely quoted inside some other command's output does not), and a task is only reported as *running* if it was started after the process that is currently alive for that session — a background task dies with the process that started it and leaves no notice, so anything older is shown as *unknown*. Output files named in the transcript are read only from Claude Code's own temp task directory (workflow transcripts only from under `~/.claude/projects`), so a tampered tool result cannot make the server hand your phone an arbitrary file.
+
 **Sending images and documents to Claude:**
 
 Tap "+" next to the composer to attach a photo (camera or library) or a document, multiple at once. It uploads to a local `uploads\` folder (created automatically) and the message text gets a `[phone photo, please use Read to view: <path>]` (or `[phone file, please use Read to read: <path>]`) note appended so Claude knows to look at it. Accepts png/jpg/gif/webp and pdf/txt/md/csv/json (magic bytes are checked), 25 MB max per file.
@@ -119,7 +122,7 @@ Tap "+" next to the composer to attach a photo (camera or library) or a document
 
 - Theme: Settings → Appearance (Auto / Light / Dark). All colors are CSS custom properties in `static/style.css` (`:root` for dark, `html[data-theme="light"]` for light).
 - Each room has its own model/effort override (top-right pill button in a conversation), stored in `localStorage`; "Default" falls back to the global choice in Settings.
-- The model picker offers every model the current Claude Code CLI accepts as `--model` (Fable 5.1/5, Opus 5.5/5/4.8/4.7/4.6, Sonnet 5/4.6, Haiku 4.5). The list lives in exactly one place — `MODEL_LIST` at the top of `static/app.js` (labels plus the one-line plain-language description shown in Settings) — and the short key → full model ID map is `MODEL_MAP` in `server.py`; change both when a new model ships. The descriptions are in Traditional Chinese; edit them to taste.
+- The model picker offers every model the current Claude Code CLI accepts as `--model` (Fable 5.1/5, Opus 5.5/5/4.8/4.7/4.6, Sonnet 5/4.6, Haiku 4.5). The list lives in exactly one place — `MODEL_LIST` at the top of `static/js/state.js` (labels plus the one-line plain-language description shown in Settings) — and the short key → full model ID map is `MODELS` in `claude_chat/config.py`; change both when a new model ships. The descriptions are in Traditional Chinese; edit them to taste.
 - Voice input: the microphone button uses the Web Speech API; unsupported browsers get a hint to use the keyboard's built-in dictation key instead.
 - Usage panel (Settings → "plan limits & usage", collapsed by default): the top half shows your Anthropic plan limits (5-hour / weekly, same source as the desktop app's OAuth usage API, using the local `~/.claude/.credentials.json` token, cached 60s); the bottom half is real token usage computed by scanning your local `.jsonl` transcripts (today / last 7 days, deduplicated by request ID, includes scheduled/subagent runs).
 - Context bar at the top of a conversation shows current context usage for that session (turns orange above 70%, red above 85%), estimated from the model name and the last reported token usage.
@@ -128,7 +131,7 @@ Tap "+" next to the composer to attach a photo (camera or library) or a document
 
 - Don't type into the same session from your desktop Claude Code and this phone UI at the same time — the list shows a "desktop open" tag as a reminder.
 - Locking your phone doesn't interrupt anything — the run keeps going on the server; reopen the room later to see the result.
-- One room can only run one message at a time; the whole server allows at most 4 concurrent runs (`MAX_CONCURRENT_RUNS` in `server.py`).
+- One room can only run one message at a time; the whole server allows at most 4 concurrent runs (`MAX_CONCURRENT_RUNS` in `claude_chat/config.py`).
 - For an `https://` URL instead of `http://`, enable Tailscale **Serve** on your tailnet and run `tailscale serve --bg 8899` — optional, and it does not change who can reach the server (Serve stays inside your tailnet). Do not use Tailscale **Funnel**, which would publish it to the open internet.
 
 ### Two-way sync with the Claude Code desktop app
@@ -183,13 +186,13 @@ Copy `config.example.json` to `config.json` (gitignored) and set what you need. 
 | `extra_file_roots` | `[]` | Additional folders `GET /api/file` may read from. |
 | `desktop_sync` | `"manual"` | How phone-started sessions get into the Claude desktop app: `auto`, `manual` (only via the long-press action), or `off`. Changeable from the in-app Settings sheet. |
 
-A few constants near the top of `server.py` are also worth knowing: `PORT` (8899), `MAX_CONCURRENT_RUNS` (4 simultaneous agent runs server-wide), `MAX_ROOMS` (250 rooms in the normal list view), and `TAILSCALE_EXE` (where to look for Tailscale when auto-detecting its IP).
+A few constants in `claude_chat/config.py` are also worth knowing: `PORT` (8899), `MAX_CONCURRENT_RUNS` (4 simultaneous agent runs server-wide), `MAX_ROOMS` (250 rooms in the normal list view), and `TAILSCALE_EXE` (where to look for Tailscale when auto-detecting its IP).
 
 ## How it works
 
-- **Backend:** a single-file FastAPI app (`server.py`). No database — the chat list is read straight off the `.jsonl` transcript files Claude Code already writes under `~/.claude/projects/`, with an in-memory cache keyed on file size/mtime so re-scanning is cheap. The desktop app's per-session registry files (a few hundred small JSON files) are cached the same way, so the room list doesn't re-read all of them on every 5-second poll.
+- **Backend:** a FastAPI app. `server.py` is only the entry point (logging, socket binding); the code lives in the `claude_chat/` package, one module per concern: `config` (paths, `config.json`, constants, the engine table), `jsonl` (transcript parsing — pure functions), `rooms` (the room list and matching against the desktop app's registry), `history` (paging and tailing a transcript), `runs` and `runner` (spawning `claude -p`, Codex and the API engines), `peer` (the named-pipe channel into a live desktop session), `perm` (permission cards), `bgtasks` (background-task detection), `usage`, `search`, `desktop` (registry files and `claude://` links), `bridge` (writing the hook/MCP config files at startup), `procs` (Windows process queries) and `api` (the FastAPI routes, which only validate and delegate). No database — the chat list is read straight off the `.jsonl` transcript files Claude Code already writes under `~/.claude/projects/`, with an in-memory cache keyed on file size/mtime so re-scanning is cheap. The desktop app's per-session registry files (a few hundred small JSON files) are cached the same way, so the room list doesn't re-read all of them on every 5-second poll.
 - **Slow phone links:** responses over 1 KB are gzip-compressed (the room list and the JS bundle shrink 3–4×), the room list is warmed once at startup instead of on the first request, and every request from a non-loopback client is logged with its server-side time in `logs\server.log` (`req <ip> <method> <path> -> <status> <seconds>`). If the phone feels slow and those numbers are in the tens of milliseconds, the time is going into the network — typically a Tailscale DERP relay because neither side can punch through NAT; `tailscale ping <peer>` tells you whether you're direct or relayed, and a UDP 41641 port-forward on the server's router usually fixes it.
-- **Frontend:** plain HTML/CSS/JS in `static/` — no framework, no build step, no bundler.
+- **Frontend:** plain HTML/CSS/JS in `static/` — no framework, no bundler. The JavaScript is split into nine files under `static/js/`, but the browser still fetches one `/static/app.js`: the server concatenates the parts in the order listed in `JS_PARTS` (`claude_chat/api.py`) and serves the result with an ETag, so an unchanged bundle comes back as a 304 — one request instead of nine, which matters on a relayed phone link. After editing JS or CSS, bump the `?v=` query strings in `static/index.html`, otherwise a Home-Screen app keeps its cached copy.
 - **Sending a message** shells out to `claude -p --resume <session-id> --output-format stream-json --verbose <permission-flags>` and streams the resulting JSON events back to the browser over Server-Sent Events (`GET /api/run/{run_id}/events`), so the UI updates live as Claude works.
 - **Network exposure:** the server only binds to `127.0.0.1` plus (if detected) your machine's Tailscale IPv4 address — nothing else. It is not reachable from your regular home Wi-Fi/LAN or the public internet unless you explicitly change `bind_hosts()`.
 
@@ -259,9 +262,15 @@ Hooks are read when a session starts, so sessions already open keep the old beha
 
 ### Troubleshooting
 
-- **"claude" can't be found / server won't start a run:** the executable lookup logic lives in `resolve_claude_cmd()` near the top of `server.py`. It tries, in order: the Claude Code CLI's own `claude.exe`, then `node` + `cli.js` directly, then falls back to `claude.cmd` via `cmd.exe`. If a Claude Code / npm update moves things, start here.
+- **"claude" can't be found / server won't start a run:** the executable lookup logic lives in `resolve_claude_cmd()` in `claude_chat/config.py`. It tries, in order: the Claude Code CLI's own `claude.exe`, then `node` + `cli.js` directly, then falls back to `claude.cmd` via `cmd.exe`. If a Claude Code / npm update moves things, start here.
 - **The phone shows a permission/question card for something you already answered on the desktop, sometimes several steps old:** the server decides "already answered" by finding the tool result in the session transcript. It now scans from 1 MB before the card was created to the end of the file; older builds looked only at the last 256 KB, which a busy desktop session outgrows within minutes, so the card lingered for the full hour TTL.
 - **Nothing shows up from your phone:** confirm Tailscale is installed, running, and logged into the same tailnet as your phone; confirm `tailscale ip -4` on the server machine returns a `100.x.x.x` address; confirm you're using that IP (not `127.0.0.1`) from the phone.
+
+## Development
+
+- **Layout:** `server.py` is only the entry point; the code is in `claude_chat/` (module map under "How it works" — every file opens with a one-line docstring saying what it owns). `api.py` validates parameters and delegates; logic lives in the other modules. The front end is `static/js/` plus `static/style.css`; "How it works" explains how the parts are served as one file and why the `?v=` strings in `static/index.html` must be bumped after a change.
+- **One-shot check:** `check.cmd` runs `ruff check` (lint, configured in `pyproject.toml`), `node --check` on every `.js` file, and `pytest`, stopping at the first failure. Run it after any change, then restart the server. It expects the venv at `.venv\` with the dev tools installed (`.venv\Scripts\pip install -r requirements-dev.txt`).
+- **Tests** (`tests/`): transcript parsing, history paging, room visibility rules, permission-card reconciliation (including a transcript that grows past the scan window), background-task detection (including the two false positives described above), the `/api/file` allow-list, the auth token, the JS bundle order, and the cleanup of stale peer registrations left behind by a hard restart. Fabricated transcripts come from `tests/helpers.py` and must be compact JSON exactly as the CLI writes it — the byte-level prefilter skips pretty-printed lines. The tests only create files under their own temp folders.
 
 ## Limitations
 
