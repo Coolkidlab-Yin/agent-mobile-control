@@ -1,4 +1,4 @@
-# claude-chat
+# agent-mobile-control
 
 A self-hosted, mobile-friendly web UI for driving your local coding agents like a chat app. Each chat room is one agent session, and opening a room resumes that conversation. Typical setup: run it on your desktop/workstation, reach it from your phone over [Tailscale](https://tailscale.com/) or another private VPN.
 
@@ -41,8 +41,8 @@ If any of this is unacceptable for your situation, don't run this tool — it wa
 ## Installation
 
 ```bat
-git clone <this-repo-url> claude-chat-mobile
-cd claude-chat-mobile
+git clone <this-repo-url> agent-mobile-control
+cd agent-mobile-control
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 ```
