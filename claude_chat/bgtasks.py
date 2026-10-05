@@ -15,6 +15,8 @@ from .runs import BY_SESSION, RUNS
 # 開工時 tool_result 寫下任務編號與輸出檔；結束時 CLI 塞一則 <task-notification>，
 # 存法有三種（queue-operation enqueue / attachment queued_command / user 字串）。
 # 只認這三種紀錄型態的通知——同樣的字串被引用在別的工具輸出裡不算數。
+# 用 TaskStop 手動停掉的任務不會有通知，改認那次 TaskStop 的成功回覆（2026-10-04 實際卡過：
+# 停掉的任務在手機上掛「進行中」9 個多小時）。
 # 一律 .match（從工具結果開頭比對）：CLI 自己的開工訊息就在開頭；
 # 同一句話若只是被某個指令印出來（例如 grep 舊紀錄），在結果中間，不算數
 _BG_ID = {
@@ -29,8 +31,10 @@ _BG_SUMMARY = re.compile(r"Summary: (.+?)(?= \||\n|$)")
 _BG_NOTE_ID = re.compile(r"<task-id>(\w+)</task-id>")
 _BG_NOTE_STATUS = re.compile(r"<status>(\w+)</status>")
 _BG_NOTE_SUM = re.compile(r"<summary>([\s\S]*?)</summary>")
+_BG_STOPPED = re.compile(r'\{"message":"Successfully stopped task: (\w+)')
 _BG_MARKERS = (b"run_in_background", b"background", b"agentId", b"task-notification",
-               b'"name":"Bash"', b'"name":"Agent"', b'"name":"Task"', b'"name":"Workflow"')
+               b'"name":"Bash"', b'"name":"Agent"', b'"name":"Task"', b'"name":"Workflow"',
+               b'"name":"TaskStop"', b"Successfully stopped task")
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 # 輸出檔路徑是從對話紀錄裡讀來的文字：只准讀 CLI 自己的暫存任務目錄，工作流程目錄只准在 projects 底下，
 # 不然一段被竄改的工具輸出就能叫伺服器把任意 .output 檔的內容吐給手機
@@ -86,11 +90,19 @@ def _bg_record(rec, st):
             if name in ("Bash", "Agent", "Task", "Workflow"):
                 label = (inp.get("description") or inp.get("subagent_type") or _tool_detail(name, inp) or name)
                 st["uses"][b.get("id")] = (name, str(label).replace("\n", " ")[:120])
+            elif name == "TaskStop":
+                st["uses"][b.get("id")] = (name, str(inp.get("task_id") or ""))
         elif typ == "user" and b.get("type") == "tool_result":
             use = st["uses"].pop(b.get("tool_use_id"), None)   # 用過就丟，記憶體不會一直長
             if not use:
                 continue
             txt = _bg_text(b.get("content"))
+            if use[0] == "TaskStop":
+                m = _BG_STOPPED.match(txt.lstrip())
+                task = st["tasks"].get(use[1])
+                if not b.get("is_error") and m and m.group(1) == use[1] and task and task["status"] == "running":
+                    task.update(status="stopped", ended=ts, summary="手動停止")
+                continue
             kind = {"Bash": "bash", "Agent": "agent", "Task": "agent", "Workflow": "workflow"}[use[0]]
             m = _BG_ID[kind].match(txt.lstrip())
             if not m:

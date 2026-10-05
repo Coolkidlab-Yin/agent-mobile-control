@@ -87,3 +87,20 @@ def test_bg_progress_only_reads_inside_cli_temp_dir(tmp_path):
     finally:
         f.unlink()
         inside_dir.rmdir()
+
+
+def test_bg_task_stopped_by_taskstop_is_not_left_running(tmp_path):
+    stopped = '{"message":"Successfully stopped task: abc123 (pytest)"}'
+    p = write_jsonl(tmp_path / "s.jsonl", [
+        assistant([tool_use("Bash", {"command": "pytest", "description": "跑測試"}, "u1")]),
+        tool_result("u1", "Command did not complete within its 120s timeout and was moved to the background "
+                          "(ID: abc123). Output is being written to: C:\\tmp\\claude\\abc123.output"),
+        assistant([tool_use("Bash", {"command": "grep stopped log"}, "u2")]),
+        tool_result("u2", "舊紀錄：\n" + stopped),                  # 只是被印出來：不算
+        assistant([tool_use("TaskStop", {"task_id": "abc123"}, "u3")]),
+        tool_result("u3", "<tool_use_error>No task found with ID: abc123</tool_use_error>", is_error=True),
+    ])
+    assert B._bg_scan(p)["tasks"]["abc123"]["status"] == "running"   # 停止失敗：不動
+    append_jsonl(p, [assistant([tool_use("TaskStop", {"task_id": "abc123"}, "u4")]), tool_result("u4", stopped)])
+    t = B._bg_scan(p)["tasks"]["abc123"]
+    assert (t["status"], t["summary"]) == ("stopped", "手動停止") and t["ended"] > 0

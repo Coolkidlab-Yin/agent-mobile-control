@@ -13,4 +13,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ok = $false; for ($i = 0; $i -lt 20; $i++) { Start-Sleep 1; try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 http://127.0.0.1:8899/api/health; if ($r.StatusCode -eq 200) { $ok = $true; break } } catch {} };" ^
   "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($here, [StringComparison]::OrdinalIgnoreCase) -ge 0 } | ForEach-Object { 'pid=' + $_.ProcessId + ' started=' + $_.CreationDate };" ^
   "if ($ok) { 'health OK - check that the started= time above is NOW' } else { 'health FAILED' }"
-pause
+rem Wait for a key when double-clicked so the result stays readable. Not pause: pause hangs
+rem forever when run without a console (background shells); timeout.exe exits at once there.
+rem Full path on purpose: from Git Bash, plain 'timeout' resolves to the coreutils one.
+"%SystemRoot%\System32\timeout.exe" /t -1 2>nul

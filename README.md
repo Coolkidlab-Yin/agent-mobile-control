@@ -75,7 +75,7 @@ On iPhone Safari: Share → Add to Home Screen, and it behaves like a standalone
 
 - The included `start-server.cmd` is the simplest way to start it manually.
 - For "always on," register it as a Windows scheduled task (or any process supervisor you prefer) that runs `pythonw.exe server.py` at logon.
-- To restart: double-click `restart-server.cmd`. It kills only the `pythonw.exe` whose command line points at this folder (not "whatever is listening on 8899" — that once took out an unrelated service), starts it again, and prints the new process's start time. Look at that time: a health-check 200 alone proves nothing, because a stale process answers 200 too. If you registered a scheduled task, re-trigger that instead.
+- To restart: double-click `restart-server.cmd`. It kills only the `pythonw.exe` whose command line points at this folder (not "whatever is listening on 8899" — that once took out an unrelated service), starts it again, and prints the new process's start time. Look at that time: a health-check 200 alone proves nothing, because a stale process answers 200 too. Double-clicked, it waits for a key so you can read the result; run from a script or a background shell, it exits on its own instead of hanging. If you registered a scheduled task, re-trigger that instead.
 - Logs are written to `logs\server.log`.
 
 **Chat rooms:**

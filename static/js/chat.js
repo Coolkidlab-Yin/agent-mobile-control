@@ -451,16 +451,36 @@ inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); sendMsg(); }
 });
 
-/* iOS 鍵盤把輸入列蓋住的修正 */
+/* iOS 鍵盤把輸入列蓋住的修正：鍵盤開著時把聊天畫面底邊推到鍵盤上緣。
+ * 只在有輸入框拿到焦點時才推，沒焦點一律歸零，並在回到前景、焦點變動時重算。
+ * 2026-10-04 事故：App 從背景回來時 iOS 沒再發 resize，舊的推高值卡住，
+ * 房間只剩上面一截、底下露出列表，換房間也一樣（值掛在共用的聊天畫面上）。 */
 if (window.visualViewport) {
   const vv = window.visualViewport;
+  const NOT_TEXT = /^(button|checkbox|radio|submit|reset|file|range|color|image|hidden)$/;
+  const typing = () => {
+    const el = document.activeElement;
+    if (!el) return false;
+    if (el.tagName === "TEXTAREA" || el.isContentEditable) return true;
+    return el.tagName === "INPUT" && !NOT_TEXT.test(el.type);
+  };
+  let lastGap = 0;
   const fix = () => {
-    const gap = window.innerHeight - vv.height - vv.offsetTop;
-    chatScreen.style.bottom = (gap > 0 ? gap : 0) + "px";
-    scrollBottom();
+    let gap = 0;
+    if (typing()) {
+      // ponytail: 上限 60% 螢幕高。真的鍵盤不會更高，超過代表讀到壞值（剛從背景回來、畫面被縮放）。
+      gap = Math.max(0, Math.min(window.innerHeight - vv.height - vv.offsetTop, window.innerHeight * 0.6));
+    }
+    chatScreen.style.bottom = gap + "px";
+    if (gap !== lastGap) scrollBottom();
+    lastGap = gap;
   };
   vv.addEventListener("resize", fix);
   vv.addEventListener("scroll", fix);
+  document.addEventListener("focusin", fix);
+  document.addEventListener("focusout", () => setTimeout(fix, 60));
+  document.addEventListener("visibilitychange", fix);
+  window.addEventListener("pageshow", fix);
 }
 
 /* ---------- 語音輸入 ---------- */
