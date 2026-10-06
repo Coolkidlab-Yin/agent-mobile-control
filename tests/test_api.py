@@ -65,3 +65,57 @@ def test_status_and_rooms_shapes(client):
     assert set(client.get("/api/status").json()) == {"running"}
     r = client.get("/api/rooms")
     assert r.status_code == 200 and set(r.json()) == {"rooms", "pending_perms"}
+
+
+def test_history_returns_pending_and_answered_desktop_cards(client, tmp_path, monkeypatch):
+    """10-06：房間有即時連線時手機只從 n_events 之後接事件，早就開著的卡要靠 history 補回來，
+    不然只看得到轉圈圈的 AskUserQuestion、沒有卡。"""
+    import time as _t
+
+    from helpers import assistant, tool_use, write_jsonl
+
+    from claude_chat import perm as P
+    from claude_chat import rooms as R
+    sid = "dddddddd-0000-0000-0000-000000000006"
+    monkeypatch.setattr(R, "PROJECTS_DIR", tmp_path)
+    write_jsonl(tmp_path / "slug" / (sid + ".jsonl"),
+                [assistant([tool_use("AskUserQuestion", {"questions": [{"question": "推不推？"}]}, "u1")])])
+    P.PERMS.clear()
+    P.PERMS["p1"] = {"run_id": None, "sid": sid, "tool": "AskUserQuestion", "detail": "推不推？", "preview": "",
+                     "reason": "", "answer": None, "by": "", "created": _t.time(), "command": "推不推？",
+                     "questions": [{"question": "推不推？"}]}
+    P.PERMS["p2"] = dict(P.PERMS["p1"], answer="allow", by="desktop")
+    P.PERMS["p3"] = dict(P.PERMS["p1"], sid="other-session")        # 別的房的卡不混進來
+    try:
+        d = client.get("/api/history/slug/" + sid).json()
+        assert [p["perm_id"] for p in d["pending"]] == ["p1"] and d["pending"][0]["questions"][0]["question"] == "推不推？"
+        assert [p["perm_id"] for p in d["answered"]] == ["p2"] and d["answered"][0]["by"] == "desktop"
+    finally:
+        P.PERMS.clear()
+
+
+def test_perm_poll_tells_hook_to_quit_once_desktop_answered(client, tmp_path, monkeypatch):
+    """10-06：桌面先答了之後 hook 還會輪詢到逾時——hook 來查時也要對 jsonl，答了就回 ask 讓它退出。"""
+    import time as _t
+
+    from helpers import assistant, tool_result, tool_use, write_jsonl
+
+    from claude_chat import perm as P
+    sid = "eeeeeeee-0000-0000-0000-000000000007"
+    monkeypatch.setattr(P, "PROJECTS_DIR", tmp_path)
+    write_jsonl(tmp_path / "slug" / (sid + ".jsonl"), [
+        assistant([tool_use("AskUserQuestion", {"questions": [{"question": "推不推？"}]}, "u1")]),
+        tool_result("u1", "Your questions have been answered: ..."),
+    ])
+    P.PERMS.clear()
+    P.PERMS["p9"] = {"run_id": None, "sid": sid, "tool": "AskUserQuestion", "detail": "推不推？", "preview": "",
+                     "reason": "", "answer": None, "by": "", "created": _t.time() - 5, "command": "推不推？",
+                     "questions": [{"question": "推不推？"}]}
+    try:
+        d = client.get("/api/perm/p9").json()
+        assert d == {"decision": "ask", "by": "desktop"}
+        assert P.PERMS["p9"]["answer"] == "allow" and P.PERMS["p9"]["by"] == "desktop"
+        # 手機那邊看到的是「已回答（桌面）」
+        assert [p["perm_id"] for p in P.pending_perms(sid, answered=True)] == ["p9"]
+    finally:
+        P.PERMS.clear()

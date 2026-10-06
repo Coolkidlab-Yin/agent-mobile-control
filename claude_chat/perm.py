@@ -69,6 +69,17 @@ def _desktop_answered(p):
     return None
 
 
+def refresh_desktop_answer(p, now=None):
+    """桌面 session 的卡：每 2 秒最多對一次 jsonl，看桌面是不是已經答了；答了就記成 desktop。
+    手機來列卡時叫，hook 自己來輪詢時也要叫——不然桌面先答之後 hook 會一直輪詢到 9.5 分鐘逾時（10-06）。"""
+    now = now or time.time()
+    if p["answer"] is None and p.get("run_id") is None and now - p["created"] > 3 and now - p.get("checked", 0) > 2:
+        p["checked"] = now
+        d = _desktop_answered(p)
+        if d:
+            p["answer"], p["by"] = d, "desktop"
+
+
 def pending_perms(sid=None, answered=False):
     """桌面 session 的授權卡：預設列還沒回答的（清單標記＋旁觀模式）；answered=True 列最近已回答的（讓手機把卡鎖起來）。"""
     now = time.time()
@@ -77,11 +88,7 @@ def pending_perms(sid=None, answered=False):
         if now - p["created"] > PERM_TTL:
             PERMS.pop(pid, None)
             continue
-        if p["answer"] is None and p.get("run_id") is None and now - p["created"] > 3 and now - p.get("checked", 0) > 2:
-            p["checked"] = now
-            d = _desktop_answered(p)
-            if d:
-                p["answer"], p["by"] = d, "desktop"
+        refresh_desktop_answer(p, now)
         if p.get("run_id") or (p["answer"] is not None) != answered:
             continue
         if sid and p.get("sid") != sid:

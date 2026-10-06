@@ -62,7 +62,7 @@ from .peer import (
     peer_interrupt,
     run_peer,
 )
-from .perm import PERMS, _perm_card, _perm_key, pending_perms
+from .perm import PERMS, _perm_card, _perm_key, pending_perms, refresh_desktop_answer
 from .rooms import _codex_info, _room_cache, _safe_name, find_room_file, load_overlay, save_overlay, save_title, scan_rooms
 from .runner import run_api, run_claude, run_codex
 from .runs import BY_SESSION, RUNS, Run, _emit
@@ -325,6 +325,10 @@ def history(slug: str, sid: str, before: int | None = None, limit: int = 120):
     out["busy"] = (not eng) and _room_busy(f)
     out["run"] = ({"run_id": out["running_run_id"], "n_events": out["n_events"],
                    "peer": bool(getattr(run, "peer", False))} if run else None)
+    # 等著的授權／選擇題卡也一起回：手機開房時若這房有即時連線，只會從 n_events 之後接事件，
+    # 早就開著的卡片只住在 PERMS 裡，不補這裡就只看得到轉圈圈的 AskUserQuestion、沒有卡（10-06）
+    out["pending"] = pending_perms(sid) if not eng else []
+    out["answered"] = pending_perms(sid, answered=True) if not eng else []
     return out
 
 
@@ -561,7 +565,11 @@ async def perm_poll(perm_id: str):
     if not p:
         raise HTTPException(404, "沒有這筆授權")
     for _ in range(40):
+        refresh_desktop_answer(p)
         if p["answer"] is not None:
+            if p.get("by") == "desktop":
+                # 桌面已經自己答了：叫 hook 安靜退出（不留意見），別拿對帳出來的 allow/deny 當答案送回去
+                return {"decision": "ask", "by": "desktop"}
             return {"decision": p["answer"], "answers": p.get("answers") or {}, "free_text": p.get("free_text") or ""}
         if p.get("run_id"):
             run = RUNS.get(p["run_id"])

@@ -42,6 +42,13 @@ function stopWatch() {
   if (watchBusy) { watchBusy = false; hideTyping(); if (current) setSub(""); }
 }
 
+function showPendingPerms(d) {
+  for (const p of d.pending || []) {
+    if (!msgsEl.querySelector('.perm-card[data-perm-id="' + p.perm_id + '"]')) { hideTyping(); renderPermCard(p); scrollBottom(); }
+  }
+  for (const p of d.answered || []) lockPermCard(p.perm_id, permNote(p.answer, p.by, p.tool));
+}
+
 function startWatch() {
   stopWatch();
   if (!current || !current.sid || !current.slug || activeRun) return;
@@ -54,6 +61,7 @@ function startWatch() {
       d = await api("/api/tail/" + current.slug + "/" + sid + "?offset=" + watchOffset);
     } catch (e) { return; }
     if (!current || current.sid !== sid || activeRun) return;
+    showPendingPerms(d);   // 要交給事件流之前先放：事件流從 n_events 接起，中間送出的卡不會重播
     if (d.running) {
       // 手機這邊起的工作（例如背景重連）→ 交給事件流
       const st = await api("/api/status").catch(() => null);
@@ -62,10 +70,6 @@ function startWatch() {
     }
     watchOffset = d.offset;
     if (d.items && d.items.length) applyTailItems(d.items);
-    for (const p of d.pending || []) {
-      if (!msgsEl.querySelector('.perm-card[data-perm-id="' + p.perm_id + '"]')) { hideTyping(); renderPermCard(p); scrollBottom(); }
-    }
-    for (const p of d.answered || []) lockPermCard(p.perm_id, permNote(p.answer, p.by, p.tool));
     if (d.busy !== watchBusy) {
       watchBusy = d.busy;
       if (d.busy) { setSub("桌面工作中…"); showTyping(); scrollBottom(); }
@@ -97,6 +101,8 @@ function openRoom(room, fromPop) {
       // 若這個房間有背景工作進行中 → 接上事件流；否則旁觀桌面那邊的進度
       // （run 資訊由 history 一起帶回，省掉一趟 /api/status——手機常在慢連線上）
       const info = data && data.run;
+      // 先把已經在等的卡片放上來：接即時連線是從 n_events 之後開始，早先送出的卡不會再來一次
+      if (data) showPendingPerms(data);
       if (info) attachRun(info.run_id, info.n_events, true, info.peer);
       else startWatch();
     }).catch(() => startWatch());
