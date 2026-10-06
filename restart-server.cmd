@@ -17,3 +17,5 @@ rem Wait for a key when double-clicked so the result stays readable. Not pause: 
 rem forever when run without a console (background shells); timeout.exe exits at once there.
 rem Full path on purpose: from Git Bash, plain 'timeout' resolves to the coreutils one.
 "%SystemRoot%\System32\timeout.exe" /t -1 2>nul
+rem timeout.exe exits 1 when there is no console; do not let that become the script's exit code.
+exit /b 0

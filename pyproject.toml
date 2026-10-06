@@ -9,7 +9,10 @@ ignore = ["B008"]   # FastAPI 的 File(...) 預設參數就是這樣寫的
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --strict-markers"
+markers = [
+    "ui: 手機介面測試，起 headless Chromium 模擬 iPhone 對真伺服器實際點（check.cmd ui 才跑；缺 Playwright 或瀏覽器就 skip）",
+]
 filterwarnings = [
     "ignore:(?s).*on_event is deprecated:DeprecationWarning",   # FastAPI 的 on_event 還能用；改成 lifespan 時把這行拿掉
     "ignore:Using .httpx. with .starlette.testclient. is deprecated",   # 測試用的 TestClient 內部警告，與我們的程式無關

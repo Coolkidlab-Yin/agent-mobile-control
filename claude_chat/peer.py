@@ -50,9 +50,9 @@ class _PeerProtocol(asyncio.Protocol):
             if not self.authed:
                 if rec.get("type") == "auth" and rec.get("token") == _peer["token"]:
                     self.authed = True
-                else:
-                    log.warning("peer pipe: bad auth, closing")
-                    self.transport.close()
+                    continue   # auth 之後同一包裡的狀態回報接著處理（原本 return 會把它留到下一包，等於多等 6 秒逾時）
+                log.warning("peer pipe: bad auth, closing")
+                self.transport.close()
                 return
             self._handle(rec)
 

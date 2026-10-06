@@ -2,3 +2,4 @@
 pytest>=9
 ruff>=0.16
 pillow>=12.3   # make_icon.py 重產圖示才需要
+playwright>=1.63   # check.cmd ui 的手機介面測試；瀏覽器另外裝一次：python -m playwright install chromium
