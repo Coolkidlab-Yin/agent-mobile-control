@@ -12,6 +12,32 @@ def client(monkeypatch):
     return TestClient(A.app)
 
 
+def test_home_endpoint_returns_cards_counts_and_pending_perms(client, monkeypatch):
+    fake_rooms = [{"sid": "h1", "slug": "p", "title": "A", "project_name": "P", "last_epoch": 1.0, "preview": "",
+                   "running": False, "busy": False}]
+    monkeypatch.setattr(A, "scan_rooms", lambda show_all=False: fake_rooms)
+    monkeypatch.setattr(A, "pending_cards", lambda sid=None: [
+        {"sid": "h1", "tool": "AskUserQuestion", "waiter_gone": False, "questions": [{"question": "Q"}], "created": 1}])
+    d = client.get("/api/home").json()
+    assert set(d) == {"cards", "counts", "pending_perms", "synced"}
+    assert d["cards"][0]["section"] == "todo" and d["cards"][0]["note"] == "Q"
+    assert d["counts"] == {"todo": 1, "running": 0, "done": 0}
+    assert d["pending_perms"][0]["sid"] == "h1"
+
+
+def test_observe_endpoint_records_turns_and_rejects_unknown_kinds(client, monkeypatch):
+    from claude_chat import peer as PEER
+    monkeypatch.setattr(PEER, "OBS", {})
+    assert client.post("/api/observe", json={"sid": "s1", "kind": "bogus"}).status_code == 400
+    assert client.post("/api/observe", json={"sid": " ", "kind": "turn.start"}).status_code == 400
+    r = client.post("/api/observe", json={"sid": "s1", "kind": "turn.start", "ts": 5.0, "turnId": "t1"})
+    assert r.status_code == 200 and r.json() == {"ok": True, "matched": False}
+    obs = client.get("/api/status").json()["observed"]
+    assert obs["s1"]["executing"] is True and obs["s1"]["turn_id"] == "t1" and obs["s1"]["since"] == 5.0
+    client.post("/api/observe", json={"sid": "s1", "kind": "turn.complete", "turnId": "t1", "reason": "answer"})
+    assert client.get("/api/status").json()["observed"]["s1"]["executing"] is False
+
+
 def test_health(client):
     r = client.get("/api/health")
     assert r.status_code == 200 and r.json()["ok"] is True and "perm_ready" in r.json()
@@ -62,7 +88,7 @@ def test_app_js_is_assembled_in_order_with_etag(client):
 
 
 def test_status_and_rooms_shapes(client):
-    assert set(client.get("/api/status").json()) == {"running"}
+    assert set(client.get("/api/status").json()) == {"running", "observed"}
     r = client.get("/api/rooms")
     assert r.status_code == 200 and set(r.json()) == {"rooms", "pending_perms"}
 

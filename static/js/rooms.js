@@ -23,38 +23,50 @@ function renderPermBanner() {
 }
 
 async function loadRooms(silent) {
+  // /api/home 一趟帶回：清單用的 room 欄位＋工作台用的分段與徽章＋橫幅用的 pending_perms
   try {
-    const data = await api("/api/rooms" + (showAll() ? "?all=1" : ""));
-    rooms = data.rooms;
+    const data = await api("/api/home" + (showAll() ? "?all=1" : ""));
+    rooms = data.cards;
     pendingPerms = data.pending_perms || [];
+    homeSynced = Date.now();
+    homeFailed = "";
     renderChips();
     renderRooms();
     renderPermBanner();
+    renderHome();
+    renderConn();
   } catch (e) {
-    if (!silent) listEl.innerHTML = '<div class="empty-hint">連不上伺服器：' + esc(e.message) + "</div>";
+    homeFailed = e.message || String(e);
+    renderConn();
+    if (!silent) {
+      listEl.innerHTML = '<div class="empty-hint">連不上伺服器：' + esc(e.message) + "</div>";
+      renderHome();
+    }
   }
 }
 
+/* 專案篩選：標題列右側的原生下拉選單（10-06 本人要求從一排 chips 改成下拉；iOS 會跳系統選單，不用自己畫） */
 function renderChips() {
   const names = [];
   for (const r of rooms) {
     if (r.project_name && !names.includes(r.project_name)) names.push(r.project_name);
   }
   if (projFilter !== "全部" && !names.includes(projFilter)) projFilter = "全部";
-  const box = $("#proj-chips");
-  box.innerHTML = "";
+  const sel = $("#proj-select");
+  sel.innerHTML = "";
   for (const name of ["全部", ...names]) {
-    const el = document.createElement("div");
-    el.className = "chip" + (name === projFilter ? " on" : "");
-    el.textContent = name;
-    el.onclick = () => {
-      projFilter = name;
-      localStorage.setItem("cc-proj", name);
-      renderChips();
-      renderRooms();
-    };
-    box.appendChild(el);
+    const op = document.createElement("option");
+    op.value = name;
+    op.textContent = name === "全部" ? "全部專案" : name;
+    sel.appendChild(op);
   }
+  sel.value = projFilter;
+  sel.onchange = () => {
+    projFilter = sel.value;
+    localStorage.setItem("cc-proj", projFilter);
+    renderRooms();
+    renderHome();
+  };
 }
 
 /* 全文搜尋（對話內容命中）：輸入 ≥2 字後 400ms 問一次伺服器 */

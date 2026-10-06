@@ -1,0 +1,1 @@
+{ "name": "claude-chat-observer", "version": "0.1.0", "description": "手機聊天室的觀測 mod：回合開始/結束與手機直送抵達，POST 給 :8899/api/observe；純觀測不改行為", "author": { "name": "coolkid" } }

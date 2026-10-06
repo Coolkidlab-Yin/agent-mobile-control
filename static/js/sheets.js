@@ -243,3 +243,49 @@ document.querySelectorAll("[data-close]").forEach((b) => {
 document.querySelectorAll(".sheet-mask").forEach((m) => {
   m.addEventListener("click", (e) => { if (e.target === m) m.classList.add("hidden"); });
 });
+
+/* ---------- 面板往下滑關閉 ----------
+   設定面板很長，關閉鈕在最底下，得捲到底才按得到；原生 app 的底部面板都是往下一拉就收。
+   只在面板捲到最頂時接手（捲到一半往下滑是要看上面的內容，讓它自己捲）；
+   跟手、放開超過門檻或甩得夠快就關，不然彈回。邏輯跟對話頁的右滑返回同一套，只是換成直向。 */
+(function sheetSwipeDown() {
+  document.querySelectorAll(".sheet-mask").forEach((mask) => {
+    const sheet = mask.querySelector(".sheet");
+    if (!sheet) return;
+    let x0 = 0, y0 = 0, dy = 0, mode = "off";   // off=不處理, wait=還沒判方向, drag=跟手中
+    let py = 0, pt = 0, vel = 0;
+    sheet.addEventListener("touchstart", (e) => {
+      mode = "off";
+      if (e.touches.length !== 1 || sheet.scrollTop > 0) return;
+      if (e.target.closest("input[type=range], select, textarea")) return;
+      x0 = e.touches[0].clientX; y0 = py = e.touches[0].clientY; pt = Date.now(); dy = 0; vel = 0;
+      mode = "wait";
+    }, { passive: true });
+    sheet.addEventListener("touchmove", (e) => {
+      if (mode === "off") return;
+      const ddx = e.touches[0].clientX - x0, ddy = e.touches[0].clientY - y0;
+      if (mode === "wait") {
+        if (Math.abs(ddx) < 10 && Math.abs(ddy) < 10) return;
+        if (!(ddy > 0 && ddy > Math.abs(ddx) * 1.2)) { mode = "off"; return; }   // 往上是要捲內容，橫向是在選字
+        mode = "drag";
+        sheet.style.transition = "none";
+      }
+      e.preventDefault();
+      const y = e.touches[0].clientY, now = Date.now();
+      if (now > pt) { vel = 0.7 * (y - py) / (now - pt) + 0.3 * vel; py = y; pt = now; }
+      dy = Math.max(0, ddy);
+      sheet.style.transform = "translateY(" + dy + "px)";
+    }, { passive: false });
+    function end() {
+      if (mode !== "drag") { mode = "off"; return; }
+      mode = "off";
+      const fast = dy > 40 && vel > 0.5 && Date.now() - pt < 100;   // 停在半路再放開不算甩
+      const leave = dy > Math.min(140, sheet.clientHeight / 3) || fast;
+      sheet.style.transition = "";
+      sheet.style.transform = "";
+      if (leave) mask.classList.add("hidden");
+    }
+    sheet.addEventListener("touchend", end);
+    sheet.addEventListener("touchcancel", end);
+  });
+})();

@@ -51,3 +51,9 @@ web-titles.json
 
 # Atomic-write leftovers (config.json is written to a .tmp then renamed)
 *.json.tmp
+
+# SQLite state file (runs, events, pending cards, sent-message ids) - data, not code
+state.sqlite
+state.sqlite-*
+# type stubs the CLI generates next to a mod
+mods/*/.claude-plugin/types/

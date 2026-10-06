@@ -18,6 +18,30 @@ def test_load_history_maps_tool_results_and_compact_summary(tmp_path):
     assert out["more"] is False and out["oldest"] == 0 and out["size"] == p.stat().st_size and out["context"] is None
 
 
+def _boundary(trigger="manual", pre=407138, post=68671):
+    # Claude Code 2.1.283 起 /compact 的唯一痕跡（真實紀錄照抄欄位，不再有 isCompactSummary 的 user 條目）
+    return {"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted",
+            "compactMetadata": {"trigger": trigger, "preTokens": pre, "postTokens": post, "durationMs": 938},
+            "timestamp": "2026-10-06T06:23:45.721Z"}
+
+
+def test_compact_boundary_shows_on_phone_in_both_paths(tmp_path):
+    """手機從兩條路看對話都要看到「對話已壓縮」卡：進房載歷史，以及旁觀桌面時尾讀。
+    其他 system 紀錄（例如 stop_hook_summary）照舊不顯示。"""
+    p = write_jsonl(tmp_path / "c.jsonl", [
+        user("先做"), _boundary(), {"type": "system", "subtype": "stop_hook_summary", "content": "x"},
+        assistant("接著做"),
+    ])
+    items = H.load_history(p)["items"]
+    assert [(i["kind"], i.get("label")) for i in items] == [("text", None), ("info", "對話已壓縮"), ("text", None)]
+    assert items[1]["text"] == "手動壓縮：前文 407k tokens 收成 69k tokens" and items[1]["ts"].startswith("2026-10-06")
+    tail, _ = H.tail_items(p, 0)
+    assert [(i["kind"], i.get("label")) for i in tail if i["kind"] != "tool_ok"] == \
+        [("text", None), ("info", "對話已壓縮"), ("text", None)]
+    auto = H.load_history(write_jsonl(tmp_path / "a.jsonl", [_boundary("auto", 500, 20)]))["items"]
+    assert auto[0]["text"] == "自動壓縮：前文 500 tokens 收成 20 tokens"
+
+
 def test_load_history_pages_backwards(tmp_path):
     p = write_jsonl(tmp_path / "p.jsonl", [user(f"第 {i} 句") for i in range(5)])
     page = H.load_history(p, limit=2)

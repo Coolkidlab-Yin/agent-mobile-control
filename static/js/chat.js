@@ -103,6 +103,12 @@ function openRoom(room, fromPop) {
       const info = data && data.run;
       // 先把已經在等的卡片放上來：接即時連線是從 n_events 之後開始，早先送出的卡不會再來一次
       if (data) showPendingPerms(data);
+      // 上一輪在伺服器重啟時中斷：紀錄只到那裡，結果不明——說一聲，不然看起來像它自己停了
+      const lr = data && data.last_run;
+      if (lr && lr.status === "unknown" && !info) {
+        const t = lr.ended ? new Date(lr.ended * 1000).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }) : "";
+        sysNote("伺服器在上一輪進行中重啟" + (t ? "（" + t + "）" : "") + "，之後的過程沒有紀錄，結果不明", true);
+      }
       if (info) attachRun(info.run_id, info.n_events, true, info.peer);
       else startWatch();
     }).catch(() => startWatch());
@@ -270,6 +276,15 @@ $("#file-input").addEventListener("change", async (e) => {
 });
 
 /* ---------- 送訊息與事件流 ---------- */
+/* 送出編號：同一句重送（斷線後再按一次）沿用同一個，伺服器就不會跑第二次；改過內容再送換新的 */
+let lastSend = null;
+function sendId(text) {
+  if (!lastSend || lastSend.text !== text) {
+    lastSend = { text, id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(16).slice(2) };
+  }
+  return lastSend.id;
+}
+
 async function sendMsg() {
   let text = inputEl.value.trim();
   if ((!text && !attachments.length) || !current) return;
@@ -301,11 +316,14 @@ async function sendMsg() {
     }
     if (current.sid) { body.sid = current.sid; body.slug = current.slug; }
     else body.project = current.project;
+    body.client_msg_id = sendId(text);
     const r = await api("/api/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    lastSend = null;
+    if (r.dedup) sysNote("這句剛才已經送出過，接回同一個工作");
     if (interrupting && activeRun && r.run_id === activeRun.id) return; // 插話：同一條事件流繼續看
     attachRun(r.run_id, 0, false, r.peer);
   } catch (e) {

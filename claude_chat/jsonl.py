@@ -41,6 +41,25 @@ def _is_meta_user(rec, text):
     return t.startswith(META_PREFIXES) or t.startswith("This session is being continued")
 
 
+def _fmt_tokens(n):
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return "?"
+    return f"{n / 1000:.0f}k" if n >= 1000 else str(n)
+
+
+def compact_item(rec, ts=None):
+    """Claude Code 2.1.283 起 /compact 只在紀錄裡留一筆 system/compact_boundary（不再寫
+    isCompactSummary 的 user 條目），手機要靠它才知道對話被壓縮過。認不得就回 None。"""
+    if rec.get("type") != "system" or rec.get("subtype") != "compact_boundary":
+        return None
+    meta = rec.get("compactMetadata") or {}
+    how = "手動" if meta.get("trigger") == "manual" else "自動"
+    text = f"{how}壓縮：前文 {_fmt_tokens(meta.get('preTokens'))} tokens 收成 {_fmt_tokens(meta.get('postTokens'))} tokens"
+    return {"role": "user", "kind": "info", "text": text, "label": "對話已壓縮", "ts": ts}
+
+
 def _tool_detail(name, inp):
     if not isinstance(inp, dict):
         return ""

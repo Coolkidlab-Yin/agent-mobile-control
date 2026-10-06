@@ -28,7 +28,44 @@ from .runs import BY_SESSION, _emit, _gc_run
 # 所以本伺服器自己也登記成一個 peer（名字 phone），由同一個行程發送。回覆則靠尾讀 jsonl 顯示在手機上。
 PEER_NAME = "phone"
 _peer = {"ok": False, "sock": None, "token": None, "json": None, "key": None,
-         "status": {}}   # msg_id -> asyncio.Future(status str)
+         "status": {},     # msg_id -> asyncio.Future(status str)
+         "inflight": {}}   # sid -> [msg_id, ...] 正在等回條的直送（觀測 mod 回報「抵達」時靠 sid 對）
+
+# ---------- 觀測 mod 的回報（mods/observer）：桌面對話自己說「我開始跑了／跑完了／手機的訊息到了」 ----------
+# 直送回條的真相（2026-10-06 實測）：伺服器 log 全史 123 次直送狀態全是 unknown、接收管道零封包、
+# _pipe_send 寫完就關連線不讀回覆——CLI 的回條從來沒到過。改成讓收件端那個對話裡的 mod 在
+# session.receive 時 POST /api/observe，這裡把對應的 future 標成 delivered。turn.start/complete 則是
+# 「確認執行中」最可靠的來源（比 jsonl mtime 準：壓縮、背景通知也會動檔案）。只在記憶體，重啟歸零。
+OBS = {}   # sid -> {"executing": bool, "turn_id", "since", "last", "last_kind", "reason"}
+OBS_KINDS = ("turn.start", "turn.complete", "receive")
+
+
+def observe(sid, kind, ts=None, turn_id="", reason=""):
+    """記一筆觀測；kind=receive 時順手把這個對話最早還在等的直送回條標成 delivered。回有沒有對到回條。"""
+    ts = ts or time.time()
+    o = OBS.setdefault(sid, {"executing": False, "turn_id": "", "since": None, "last": None, "last_kind": "", "reason": ""})
+    o.update(last=ts, last_kind=kind)
+    if kind == "turn.start":
+        o.update(executing=True, turn_id=turn_id, since=ts, reason="")
+    elif kind == "turn.complete":
+        o.update(executing=False, turn_id=turn_id, reason=reason)
+    matched = False
+    if kind == "receive":
+        for mid in list(_peer["inflight"].get(sid) or []):
+            fut = _peer["status"].get(mid)
+            if fut and not fut.done():
+                fut.set_result("delivered")
+                matched = True
+                break
+    return matched
+
+
+def observed(sid):
+    return OBS.get(sid)
+
+
+def observed_all():
+    return OBS
 
 
 def _pid_domain():
@@ -228,6 +265,7 @@ async def run_peer(run, text, peer, path, fallback=None):
     run.peer_info = peer
     fut = asyncio.get_event_loop().create_future()
     _peer["status"][msg_id] = fut
+    _peer["inflight"].setdefault(run.sid, []).append(msg_id)
     try:
         offset = path.stat().st_size
     except OSError:
@@ -339,6 +377,11 @@ async def run_peer(run, text, peer, path, fallback=None):
                           "error": f"直送桌面失敗：{type(e).__name__}: {e}"})
     finally:
         _peer["status"].pop(msg_id, None)
+        lst = _peer["inflight"].get(run.sid) or []
+        if msg_id in lst:
+            lst.remove(msg_id)
+        if not lst:
+            _peer["inflight"].pop(run.sid, None)
         if run.sid and BY_SESSION.get(run.sid) == run.id:
             BY_SESSION.pop(run.sid, None)
         asyncio.get_event_loop().create_task(_gc_run(run.id))

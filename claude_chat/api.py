@@ -17,6 +17,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import home as H
+from . import store
 from .bgtasks import list_bg_tasks
 from .bridge import PERM_READY
 from .config import (
@@ -53,19 +55,33 @@ from .desktop import desktop_app_available, desktop_open, desktop_registry
 from .history import _room_busy, api_history, codex_history, load_history, tail_items
 from .jsonl import _clean_title, _head_info, _tool_detail
 from .peer import (
+    OBS_KINDS,
     _peer,
     _peer_register,
     _peer_touch_loop,
     _peer_unregister,
     _PeerProtocol,
     live_peer_for,
+    observe,
+    observed,
+    observed_all,
     peer_interrupt,
     run_peer,
 )
-from .perm import PERMS, _perm_card, _perm_key, pending_perms, refresh_desktop_answer
+from .perm import (
+    PERMS,
+    WAITER_GONE_S,
+    _perm_card,
+    _perm_key,
+    pending_perms,
+    persist_perm,
+    refresh_desktop_answer,
+    restore_perms,
+    waiter_gone,
+)
 from .rooms import _codex_info, _room_cache, _safe_name, find_room_file, load_overlay, save_overlay, save_title, scan_rooms
 from .runner import run_api, run_claude, run_codex
-from .runs import BY_SESSION, RUNS, Run, _emit
+from .runs import BY_SESSION, RUNS, Run, _emit, register, restore_from_store
 from .search import search_rooms
 from .usage import plan_limits, token_usage
 
@@ -93,6 +109,20 @@ async def _peer_startup():
 @app.on_event("startup")
 async def _warm_rooms():
     asyncio.get_event_loop().run_in_executor(None, scan_rooms)
+
+
+@app.on_event("startup")
+async def _restore_state():
+    """上一次啟動沒收尾的 run 標成「結果不明」載回來，順手清七天前的舊紀錄。"""
+    try:
+        store.init()
+        n = restore_from_store()
+        m = restore_perms()
+        store.prune()
+        if n or m:
+            log.info("restored %d run(s) left open by the previous boot as unknown, %d desktop permission card(s)", n, m)
+    except Exception as e:
+        log.warning("state store unavailable: %s", e)
 
 
 @app.on_event("shutdown")
@@ -135,6 +165,7 @@ class SendBody(BaseModel):
     model: str | None = None
     effort: str | None = None
     engine: str | None = None
+    client_msg_id: str = ""   # 手機每次送出前產生；重送沿用同一個 → 伺服器不會跑第二次
 
 
 @app.get("/api/health")
@@ -249,9 +280,54 @@ def serve_file(path: str):
     return FileResponse(str(rp))
 
 
+def pending_cards(sid=None):
+    """待回答事項的統一清單：桌面 session 的授權／選擇題卡、手機 run 的授權卡、手機 run 的提問卡。
+    每張帶 waiter_gone：等答案的程式兩輪沒來輪詢＝它已經不在（伺服器重啟、hook 逾時、行程被殺），
+    這種卡不算「在等你」，但保留在清單裡讓你知道發生過。"""
+    now = time.time()
+    out = []
+    for c in pending_perms(sid):
+        p = PERMS.get(c["perm_id"]) or {}
+        out.append(dict(c, id=c["perm_id"], run_id=None, waiter_gone=waiter_gone(p, now) if p else True))
+    for pid, p in list(PERMS.items()):
+        run = RUNS.get(p.get("run_id")) if p.get("run_id") else None
+        if not run or run.done or p["answer"] is not None or (sid and p.get("sid") != sid):
+            continue
+        out.append(dict(_perm_card(pid, p), id=pid, run_id=run.id, waiter_gone=waiter_gone(p, now)))
+    for aid, a in list(ASKS.items()):
+        run = RUNS.get(a["run_id"])
+        if not run or run.done or a["answer"] is not None or (sid and a.get("sid") != sid):
+            continue
+        out.append({"kind": "ask", "id": aid, "ask_id": aid, "tool": "AskUserQuestion", "questions": a["questions"],
+                    "sid": a.get("sid"), "source": "phone", "created": a["created"], "run_id": run.id,
+                    "last_poll": a.get("last_poll"), "waiter_gone": waiter_gone(a, now)})
+    out.sort(key=lambda c: c["created"])
+    return out
+
+
+@app.get("/api/pending")
+def pending(sid: str | None = None):
+    cards = pending_cards(sid)
+    return {"items": cards, "n_open": sum(1 for c in cards if not c["waiter_gone"]),
+            "n_gone": sum(1 for c in cards if c["waiter_gone"]), "waiter_gone_s": WAITER_GONE_S}
+
+
+@app.get("/api/home")
+def home(all: int = 0):
+    """工作台（手機首頁）：每間房一張卡，附分段與徽章；順便帶清單橫幅要的 pending_perms，手機一趟拿完。
+    synced 是伺服器時間，手機拿它當「資料時間」，不跟手機時鐘混。"""
+    cards = pending_cards()
+    out = H.build(scan_rooms(show_all=bool(all)), cards, store.last_run_for, observed)
+    out["pending_perms"] = [c for c in cards if c.get("sid") and not c["waiter_gone"]]
+    out["synced"] = time.time()
+    return out
+
+
 @app.get("/api/rooms")
 def rooms(all: int = 0):
-    return {"rooms": scan_rooms(show_all=bool(all)), "pending_perms": pending_perms()}
+    # 清單橫幅只列「真的在等你」的：等待程式已經不在的卡不算
+    return {"rooms": scan_rooms(show_all=bool(all)),
+            "pending_perms": [c for c in pending_cards() if c.get("sid") and not c["waiter_gone"]]}
 
 
 @app.get("/api/projects")
@@ -329,6 +405,11 @@ def history(slug: str, sid: str, before: int | None = None, limit: int = 120):
     # 早就開著的卡片只住在 PERMS 裡，不補這裡就只看得到轉圈圈的 AskUserQuestion、沒有卡（10-06）
     out["pending"] = pending_perms(sid) if not eng else []
     out["answered"] = pending_perms(sid, answered=True) if not eng else []
+    # 上一輪若是在伺服器重啟時中斷的，手機開房要說一聲，不然看起來像它自己停了
+    try:
+        out["last_run"] = store.last_run_for(sid)
+    except Exception:
+        out["last_run"] = None
     return out
 
 
@@ -389,17 +470,20 @@ async def ask_open(body: AskBody):
     ask_id = uuid.uuid4().hex[:12]
     questions = body.tool_input.get("questions") or []
     ASKS[ask_id] = {"run_id": body.run_id, "questions": questions,
-                    "answer": None, "created": time.time()}
+                    "answer": None, "created": time.time(), "sid": run.sid}
+    store.pending_put(ask_id, "ask", body.run_id, run.sid, {"questions": questions})
     await _emit(run, {"kind": "ask", "ask_id": ask_id, "questions": questions})
     return {"ask_id": ask_id}
 
 
 @app.get("/api/ask/{ask_id}")
 async def ask_poll(ask_id: str):
-    """hook 的長輪詢端點：最多等 20 秒，拿到答案或先回 pending。"""
+    """hook 的長輪詢端點：最多等 20 秒，拿到答案或先回 pending。每次來問＝心跳。"""
     a = ASKS.get(ask_id)
     if not a:
         raise HTTPException(404, "沒有這筆提問")
+    a["last_poll"] = time.time()
+    store.pending_touch(ask_id)
     for _ in range(40):
         if a["answer"] is not None:
             return {"answer": a["answer"]}
@@ -419,6 +503,7 @@ async def ask_answer(ask_id: str, body: AskAnswerBody):
         return {"ok": True, "already": True}
     a["answer"] = {"answers": body.answers, "free_text": body.free_text,
                    "skipped": body.skipped}
+    store.pending_answer(ask_id, a["answer"], "phone")
     run = RUNS.get(a["run_id"])
     if run:
         await _emit(run, {"kind": "ask_done", "ask_id": ask_id})
@@ -548,6 +633,7 @@ async def perm_open(body: PermBody):
                       "command": _perm_key(body.tool_input),
                       "questions": (body.tool_input.get("questions") if body.tool_name == "AskUserQuestion"
                                     and isinstance(body.tool_input, dict) else None)}
+    persist_perm(perm_id, PERMS[perm_id])
     card = _perm_card(perm_id, PERMS[perm_id])
     if run:
         await _emit(run, card)
@@ -564,8 +650,10 @@ async def perm_poll(perm_id: str):
     p = PERMS.get(perm_id)
     if not p:
         raise HTTPException(404, "沒有這筆授權")
+    p["last_poll"] = time.time()
+    store.pending_touch(perm_id)
     for _ in range(40):
-        refresh_desktop_answer(p)
+        refresh_desktop_answer(p, pid=perm_id)
         if p["answer"] is not None:
             if p.get("by") == "desktop":
                 # 桌面已經自己答了：叫 hook 安靜退出（不留意見），別拿對帳出來的 allow/deny 當答案送回去
@@ -597,9 +685,30 @@ async def perm_answer(perm_id: str, body: PermAnswerBody):
     p["by"] = body.by if body.by in ("desktop", "timeout") else "phone"
     p["answers"] = {str(k)[:500]: str(v)[:500] for k, v in (body.answers or {}).items()}
     p["free_text"] = (body.free_text or "")[:2000]
+    store.pending_answer(perm_id, {"decision": p["answer"], "answers": p["answers"], "free_text": p["free_text"]}, p["by"])
     if run:
         await _emit(run, {"kind": "perm_done", "perm_id": perm_id, "decision": p["answer"], "by": p["by"], "tool": p["tool"]})
     return {"ok": True}
+
+
+class ObserveBody(BaseModel):
+    sid: str
+    kind: str
+    ts: float | None = None
+    turnId: str = ""
+    reason: str = ""
+
+
+@app.post("/api/observe")
+def observe_event(body: ObserveBody):
+    """觀測 mod（mods/observer）的回報：回合開始/結束、手機直送的訊息抵達。純觀測，不改任何 run 的狀態；
+    只在記憶體，重啟歸零。手機自己也打得到這個端點，但它最多只能把自己送的訊息標成已送達，沒有權限可拿。"""
+    if body.kind not in OBS_KINDS:
+        raise HTTPException(400, f"kind 只能是 {', '.join(OBS_KINDS)}")
+    if not body.sid.strip():
+        raise HTTPException(400, "缺 sid")
+    matched = observe(body.sid, body.kind, ts=body.ts, turn_id=body.turnId, reason=body.reason)
+    return {"ok": True, "matched": matched}
 
 
 @app.get("/api/status")
@@ -609,7 +718,8 @@ def status():
         run = RUNS.get(rid)
         running[sid] = {"run_id": rid, "n_events": len(run.events) if run else 0,
                         "peer": bool(run and getattr(run, "peer", False))}
-    return {"running": running}
+    # observed：mod 回報的「確認執行中」（桌面對話也有，不限手機起的 run）
+    return {"running": running, "observed": observed_all()}
 
 
 @app.post("/api/send")
@@ -621,13 +731,37 @@ async def send(body: SendBody):
     mode = body.mode or CONFIG["default_mode"]
     if mode not in PERMISSION_FLAGS:
         raise HTTPException(400, "不認得這個權限模式")
+    engine = body.engine or SLUG_ENGINE.get(body.slug or "") or "claude"
+    if engine not in ENGINES:
+        raise HTTPException(400, "沒有這個 AI")
+    # 送出去重：同一個 client_msg_id 同一句＝重送（網路斷了手機再按一次），回原本那個 run，不跑第二次；
+    # 同一個編號不同內容＝衝突；建 run 之前就失敗的（4xx）把編號放掉，改過再送不算衝突
+    cmid = (body.client_msg_id or "")[:64]
+    if cmid:
+        digest = hashlib.sha256(f"{body.sid or ''}|{engine}|{text}".encode("utf-8")).hexdigest()
+        state, prev = store.message_claim(cmid, body.sid, digest)
+        if state == "conflict":
+            raise HTTPException(409, "這個送出編號已經用在不同的內容上")
+        if state == "same":
+            if prev:
+                return {"run_id": prev, "dedup": True, "peer": bool(getattr(RUNS.get(prev), "peer", False))}
+            raise HTTPException(409, "同一句正在送出中")
+    try:
+        r = await _dispatch(body, text, mode, engine)
+    except HTTPException:
+        if cmid:
+            store.message_release(cmid)
+        raise
+    if cmid and r.get("run_id"):
+        store.message_bind(cmid, r["run_id"])
+    return r
+
+
+async def _dispatch(body, text, mode, engine):
     # 算真正還在跑的 run，不要算 BY_SESSION —— 新聊天室在拿到 session id 之前
     # 不在那張表裡，用它當上限等於沒有上限
     if sum(1 for r in RUNS.values() if not r.done) >= MAX_CONCURRENT_RUNS:
         raise HTTPException(429, "同時進行的工作太多，等一件做完再送")
-    engine = body.engine or SLUG_ENGINE.get(body.slug or "") or "claude"
-    if engine not in ENGINES:
-        raise HTTPException(400, "沒有這個 AI")
 
     if body.sid:
         if body.sid in BY_SESSION:
@@ -660,9 +794,7 @@ async def send(body: SendBody):
 
     if ENGINES[engine]["kind"] == "api":
         run = Run(uuid.uuid4().hex[:12], API_SLUG[engine], body.sid, cwd)
-        RUNS[run.id] = run
-        if body.sid:
-            BY_SESSION[body.sid] = run.id
+        register(run, "api")
         asyncio.get_event_loop().create_task(run_api(run, text, engine, body.model))
         return {"run_id": run.id}
 
@@ -670,9 +802,7 @@ async def send(body: SendBody):
         if not Path(CODEX_EXE).exists():
             raise HTTPException(400, "這台電腦沒有安裝 Codex")
         run = Run(uuid.uuid4().hex[:12], "codex", body.sid, cwd)
-        RUNS[run.id] = run
-        if body.sid:
-            BY_SESSION[body.sid] = run.id
+        register(run, "codex")
         asyncio.get_event_loop().create_task(run_codex(run, text, mode))
         return {"run_id": run.id}
 
@@ -687,15 +817,12 @@ async def send(body: SendBody):
     if peer:
         run = Run(uuid.uuid4().hex[:12], body.slug, body.sid, cwd)
         run.peer = True
-        RUNS[run.id] = run
-        BY_SESSION[body.sid] = run.id
+        register(run, "peer")
         asyncio.get_event_loop().create_task(run_peer(run, text, peer, f, fallback=(mode, extra)))
         return {"run_id": run.id, "peer": True}
 
     run = Run(uuid.uuid4().hex[:12], body.slug, body.sid, cwd)
-    RUNS[run.id] = run
-    if body.sid:
-        BY_SESSION[body.sid] = run.id
+    register(run, "claude")
     asyncio.get_event_loop().create_task(run_claude(run, text, mode, extra))
     return {"run_id": run.id}
 
@@ -774,7 +901,7 @@ async def stop_run(run_id: str):
 # 前端程式拆在 static/js/ 底下幾個檔（見 JS_PARTS 的順序，等同以前 app.js 由上到下的段落）。
 # 瀏覽器仍然只抓一支 /static/app.js：手機常在慢連線上，拆檔不能變成多跑八趟。
 # 這條路由要在 StaticFiles 掛上去之前宣告才會先命中。
-JS_PARTS = ["util", "state", "rooms", "chat", "cards", "sheets", "viewer", "bg", "main"]
+JS_PARTS = ["util", "state", "rooms", "home", "chat", "cards", "sheets", "viewer", "bg", "main"]
 _js_cache = {"key": None, "body": b"", "etag": ""}
 
 

@@ -31,6 +31,33 @@ def test_sweep_removes_only_dead_claude_chat_registrations(tmp_path, monkeypatch
     assert sorted(p.name for p in tmp_path.iterdir()) == ["1.abc.key", "1.json", "3.abc.key", "3.json", "bad.json"]
 
 
+# ---------- 觀測 mod 的回報 ----------
+
+def test_observe_tracks_turns_and_resolves_the_oldest_inflight_receipt(monkeypatch):
+    monkeypatch.setattr(PEER, "OBS", {})
+    monkeypatch.setitem(PEER._peer, "inflight", {})
+    monkeypatch.setitem(PEER._peer, "status", {})
+    assert PEER.observe(SID, "turn.start", ts=10.0, turn_id="t1") is False
+    o = PEER.observed(SID)
+    assert o["executing"] is True and o["turn_id"] == "t1" and o["since"] == 10.0 and o["last_kind"] == "turn.start"
+    PEER.observe(SID, "turn.complete", ts=12.0, turn_id="t1", reason="answer")
+    o = PEER.observed(SID)
+    assert o["executing"] is False and o["reason"] == "answer" and o["last"] == 12.0
+    # 沒有直送在等回條：抵達回報只記錄，對不到東西
+    assert PEER.observe(SID, "receive") is False
+    # 兩筆直送在等：一次抵達只把最早那筆標 delivered，第二筆不動；別的對話的回報不影響這間
+    loop = asyncio.new_event_loop()
+    f1, f2 = loop.create_future(), loop.create_future()
+    PEER._peer["status"].update({"m1": f1, "m2": f2})
+    PEER._peer["inflight"][SID] = ["m1", "m2"]
+    assert PEER.observe("other-sid", "receive") is False and not f1.done()
+    assert PEER.observe(SID, "receive") is True
+    assert f1.result() == "delivered" and not f2.done()
+    assert PEER.observe(SID, "receive") is True and f2.result() == "delivered"
+    loop.close()
+    assert set(PEER.observed_all()) == {SID, "other-sid"}
+
+
 # ---------- 桌面行程活著嗎 ----------
 
 @pytest.fixture
@@ -259,6 +286,7 @@ def test_run_peer_falls_back_to_claude_p_when_pipe_is_gone(peer_env):
     assert box["fallback_calls"] == [("p1", "哈囉", "auto", ("--model", "m"))]
     assert run.peer is False and not box["sent"]
     assert [e["kind"] for e in events] == ["init", "done"] and not PEER._peer["status"]
+    assert not PEER._peer["inflight"]   # 回條等待名單也要跟著收掉，不然觀測 mod 的抵達回報會對到已結束的直送
 
 
 def test_run_peer_without_fallback_reports_pipe_error(peer_env):

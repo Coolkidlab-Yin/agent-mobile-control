@@ -126,6 +126,9 @@ def page(browser, server):
 
 
 def open_room(page):
+    # 首頁是工作台；清單在「活動」面板，先切過去再點
+    page.locator("#bottom-nav [data-tab='all']").click()
+    expect(page.locator("#pane-all")).to_be_visible()
     page.locator(".room").first.click()
     expect(page.locator("#screen-chat")).not_to_have_class(re.compile(r"hidden-right"))
     expect(page.locator("#messages .bubble:not(.typing)")).to_have_count(2)   # 問題卡與打字泡泡不算
@@ -140,7 +143,9 @@ def touch_swipe(page, points, step_ms=25, probe=None):
     cdp = page.context.new_cdp_session(page)
     x, y = points[0]
     assert page.evaluate("([x, y]) => chatScreen.contains(document.elementFromPoint(x, y)) || "
-                         "!lightbox.classList.contains('hidden')", [x, y]), "起手點不在對話頁或看圖層上"
+                         "!lightbox.classList.contains('hidden') || "
+                         "!!document.querySelector('.sheet-mask:not(.hidden) .sheet')?.contains(document.elementFromPoint(x, y))",
+                         [x, y]), "起手點不在對話頁、看圖層或面板上"
     cdp.send("Input.dispatchTouchEvent", {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]})
     seen = []
     for x, y in points[1:]:
@@ -258,6 +263,74 @@ def test_text_file_link_opens_docview(page, server):
     expect(page.locator("#screen-chat")).not_to_have_class(re.compile(r"hidden-right"))
 
 
+# ---------- 工作台（首頁） ----------
+
+def test_home_opens_on_workbench_with_three_tabs_and_the_room_under_done(page):
+    expect(page.locator("#list-title")).to_have_text("工作台")
+    expect(page.locator("#home-tabs button")).to_have_count(3)
+    expect(page.locator("#home-tabs button.on")).to_have_attribute("data-v", "todo")
+    expect(page.locator("#home-list .empty-hint")).to_have_text("沒有在等你的事")
+    expect(page.locator("#home-conn")).to_contain_text("已連線")
+    page.locator("#home-tabs button[data-v='done']").click()
+    # 「全部專案」時已完成不倒卡片，放各專案的按鈕；點了就等於在下拉選單選那個專案
+    expect(page.locator(".hcard")).to_have_count(0)
+    pick = page.locator(".proj-pick-btn")
+    expect(pick).to_have_count(1)
+    expect(pick).to_contain_text("uiproj")
+    pick.click()
+    expect(page.locator("#proj-select")).to_have_value("uiproj")
+    card = page.locator(".hcard").first
+    expect(card).to_be_visible()
+    expect(card.locator(".hc-meta")).to_contain_text("uiproj")
+    expect(card.locator(".badge")).to_have_count(0)   # 沒有 run 紀錄就不掛徽章，不編狀態
+    card.click()
+    expect(page.locator("#screen-chat")).not_to_have_class(re.compile(r"hidden-right"))
+
+
+def test_home_pending_question_shows_in_todo_with_badge_and_cta(page, server):
+    r = httpx.post(server.url + "/api/perm", json={
+        "session_id": SID, "tool_name": "AskUserQuestion", "event": "PermissionRequest",
+        "tool_input": {"questions": [{"question": QUESTION, "options": [{"label": "推"}, {"label": "先不要"}]}]},
+    }, timeout=10)
+    perm_id = r.json()["perm_id"]
+    page.reload()
+    expect(page.locator("#home-tabs button[data-v='todo'] i")).to_have_text("1")
+    card = page.locator(".hcard.k-ask").first
+    expect(card.locator(".badge")).to_have_text("等你回答")
+    expect(card.locator(".hc-body")).to_have_text(QUESTION)
+    card.locator(".hc-cta").click()
+    expect(page.locator("#screen-chat")).not_to_have_class(re.compile(r"hidden-right"))
+    expect(page.locator(".ask-card.perm-card[data-perm-id='%s']" % perm_id)).to_be_visible()
+
+
+def test_project_dropdown_filters_cards_and_remembers_choice(page):
+    sel = page.locator("#proj-select")
+    expect(sel).to_be_visible()
+    expect(sel.locator("option")).to_have_count(2)   # 全部專案 + uiproj
+    page.locator("#home-tabs button[data-v='done']").click()
+    expect(page.locator(".hcard")).to_have_count(0)          # 全部專案：已完成不列卡片
+    expect(page.locator("#home-tabs button[data-v='done'] i")).to_have_text("1")   # 數字照算
+    sel.select_option("uiproj")
+    expect(page.locator(".hcard")).to_have_count(1)
+    assert page.evaluate("localStorage.getItem('cc-proj')") == "uiproj"
+    page.reload()
+    expect(page.locator("#proj-select")).to_have_value("uiproj")
+    expect(page.locator(".hcard")).to_have_count(1)           # 重載後記得專案，已完成直接列
+    page.locator("#proj-select").select_option("全部")
+    assert page.evaluate("localStorage.getItem('cc-proj')") == "全部"
+    expect(page.locator(".proj-pick-btn")).to_have_count(1)   # 切回全部，又變回專案按鈕
+
+
+def test_bottom_nav_switches_to_all_conversations_and_back(page):
+    page.locator("#bottom-nav [data-tab='all']").click()
+    expect(page.locator("#list-title")).to_have_text("全部對話")
+    expect(page.locator("#pane-all")).to_be_visible()
+    expect(page.locator(".room").first).to_be_visible()
+    page.locator("#bottom-nav [data-tab='home']").click()
+    expect(page.locator("#list-title")).to_have_text("工作台")
+    expect(page.locator("#pane-home")).to_be_visible()
+
+
 # ---------- 問題卡 ----------
 
 def test_pending_question_card_shows_on_room_open_and_answers(page, server):
@@ -315,3 +388,50 @@ def test_pending_question_card_shows_when_room_has_live_run(page, server):
     finally:
         RUNS.pop(run.id, None)
         BY_SESSION.pop(SID, None)
+
+
+# ---------- 底部面板往下滑關閉 ----------
+
+def open_settings(page):
+    page.locator("#btn-settings").click()
+    mask = page.locator("#sheet-settings")
+    expect(mask).not_to_have_class(re.compile(r"hidden"))
+    # 設定面板比 iPhone 螢幕高，才測得到「捲到一半不該關」那條
+    assert page.evaluate("(() => { const s = document.querySelector('#sheet-settings .sheet');"
+                         " return s.scrollHeight > s.clientHeight + 50; })()")
+    return mask
+
+
+def sheet_point(page, dy=0):
+    """面板標題的中心點；標題在面板最頂，起手在這裡保證 scrollTop 是 0 那層的語意"""
+    box = page.locator("#sheet-settings .sheet-title").bounding_box()
+    return (box["x"] + box["width"] / 2, box["y"] + box["height"] / 2 + dy)
+
+
+def test_settings_sheet_closes_on_pull_down(page):
+    mask = open_settings(page)
+    x, y = sheet_point(page)
+    seen = touch_swipe(page, [(x, y), (x, y + 30), (x, y + 90), (x, y + 160), (x, y + 230)],
+                       probe="document.querySelector('#sheet-settings .sheet').style.transform")
+    assert any(t.startswith("translateY(") for t in seen), "面板沒跟手：%s" % seen
+    expect(mask).to_have_class(re.compile(r"hidden"))
+
+
+def test_settings_sheet_snaps_back_when_pull_is_short(page):
+    mask = open_settings(page)
+    x, y = sheet_point(page)
+    touch_swipe(page, [(x, y), (x, y + 20), (x, y + 40), (x, y + 60)], step_ms=150)   # 又短又慢
+    expect(mask).not_to_have_class(re.compile(r"hidden"))
+    assert page.evaluate("document.querySelector('#sheet-settings .sheet').style.transform") == ""   # 彈回原位
+
+
+def test_settings_sheet_scrolled_down_keeps_scrolling_instead_of_closing(page):
+    mask = open_settings(page)
+    page.evaluate("document.querySelector('#sheet-settings .sheet').scrollTop = 200")
+    assert page.evaluate("document.querySelector('#sheet-settings .sheet').scrollTop") > 0
+    box = page.locator("#sheet-settings .sheet").bounding_box()
+    x, y = box["x"] + box["width"] / 2, box["y"] + 60
+    seen = touch_swipe(page, [(x, y), (x, y + 30), (x, y + 90), (x, y + 160), (x, y + 230)],
+                       probe="document.querySelector('#sheet-settings .sheet').style.transform")
+    assert not any(t.startswith("translateY(") for t in seen), "捲到一半往下滑不該被當成關閉：%s" % seen
+    expect(mask).not_to_have_class(re.compile(r"hidden"))

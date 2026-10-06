@@ -3,7 +3,7 @@
 import time
 
 from .config import BUSY_WINDOW, MAX_HISTORY_BYTES
-from .jsonl import _ctx_window, _is_meta_user, _loads, _text_of, items_from_message
+from .jsonl import _ctx_window, _is_meta_user, _loads, _text_of, compact_item, items_from_message
 
 
 def codex_history(path, limit=120):
@@ -114,6 +114,11 @@ def load_history(path, before=None, limit=120):
             for it in reversed(got):
                 it["i"] = idx
                 items.append(it)
+        elif rt == "system":
+            it = compact_item(rec, ts)
+            if it:
+                it["i"] = idx
+                items.append(it)
         if len(items) >= limit:
             reached_start = False
             break
@@ -171,6 +176,10 @@ def tail_items(path, offset):
                     items.append({"role": "user", "kind": "info", "text": text, "label": "背景工作回報", "ts": ts})
                 elif not _is_meta_user(rec, text):
                     items.append({"role": "user", "kind": "text", "text": text, "ts": ts})
+        elif rt == "system":
+            it = compact_item(rec, ts)
+            if it:
+                items.append(it)
         elif rt == "assistant":
             for it in items_from_message("assistant", msg, ts, tool_status):
                 items.append(it)

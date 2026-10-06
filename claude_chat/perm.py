@@ -1,20 +1,55 @@
 # -*- coding: utf-8 -*-
 """授權卡：先問我模式的逐項授權、桌面 session 的危險指令與選擇題也能在手機按。這裡是卡片的登記表與對帳邏輯；路由在 api。"""
+import logging
 import time
 
+from . import store
 from .config import PROJECTS_DIR
 from .jsonl import _loads
+
+log = logging.getLogger("claude-chat")
 
 # ---------- 逐項授權（先問我模式 ＋ 桌面 session 的危險指令也能在手機按） ----------
 PERMS = {}  # perm_id -> {"run_id"|None, "sid", "tool", "detail", "preview", "reason", "answer", "created"}
 PERM_TTL = 60 * 60          # 沒人理的授權卡幾秒後不再列出（hook 那邊最多等 55 分鐘）
+WAITER_GONE_S = 40          # 等待程式（hook／MCP）每輪最多 20 秒來問一次；兩輪沒來＝它已經不在了
+_RUNTIME_KEYS = ("checked", "scan_from", "last_poll")   # 只活在記憶體、不落地的欄位
 
 
 def _perm_card(perm_id, p):
     return {"kind": "perm", "perm_id": perm_id, "tool": p["tool"], "detail": p["detail"],
             "preview": p["preview"], "reason": p["reason"], "sid": p.get("sid"),
             "source": "desktop" if p.get("run_id") is None else "phone", "created": p["created"],
-            "answer": p.get("answer"), "by": p.get("by") or "", "questions": p.get("questions")}
+            "answer": p.get("answer"), "by": p.get("by") or "", "questions": p.get("questions"),
+            "last_poll": p.get("last_poll")}
+
+
+def waiter_gone(p, now=None):
+    """等答案的那個程式還在不在：看它最後一次來輪詢的時間，沒輪詢過就看建立時間。"""
+    now = now or time.time()
+    return now - (p.get("last_poll") or p["created"]) > WAITER_GONE_S
+
+
+def persist_perm(pid, p):
+    try:
+        store.pending_put(pid, "perm", p.get("run_id"), p.get("sid"),
+                          {k: v for k, v in p.items() if k not in _RUNTIME_KEYS})
+    except Exception as e:
+        log.warning("store.pending_put failed for %s: %s", pid, e)
+
+
+def restore_perms():
+    """重啟後把桌面 session 的授權卡載回來（它們的桌面行程還活著，hook 下一輪來問就接得上）。
+    手機 run 的卡不載：那些 run 已經跟舊伺服器一起結束了。回載了幾張。"""
+    n = 0
+    for row in store.pending_open(PERM_TTL):
+        if row["kind"] != "perm" or row["run_id"] or row["id"] in PERMS:
+            continue
+        p = dict(row["payload"])
+        p.update(answer=None, by="", created=row["created"], last_poll=row["last_poll"])
+        PERMS[row["id"]] = p
+        n += 1
+    return n
 
 
 def _perm_key(inp):
@@ -69,8 +104,8 @@ def _desktop_answered(p):
     return None
 
 
-def refresh_desktop_answer(p, now=None):
-    """桌面 session 的卡：每 2 秒最多對一次 jsonl，看桌面是不是已經答了；答了就記成 desktop。
+def refresh_desktop_answer(p, now=None, pid=None):
+    """桌面 session 的卡：每 2 秒最多對一次 jsonl，看桌面是不是已經答了；答了就記成 desktop（給 pid 就順便落地）。
     手機來列卡時叫，hook 自己來輪詢時也要叫——不然桌面先答之後 hook 會一直輪詢到 9.5 分鐘逾時（10-06）。"""
     now = now or time.time()
     if p["answer"] is None and p.get("run_id") is None and now - p["created"] > 3 and now - p.get("checked", 0) > 2:
@@ -78,6 +113,11 @@ def refresh_desktop_answer(p, now=None):
         d = _desktop_answered(p)
         if d:
             p["answer"], p["by"] = d, "desktop"
+            if pid:
+                try:
+                    store.pending_answer(pid, {"decision": d}, "desktop")
+                except Exception as e:
+                    log.warning("store.pending_answer failed for %s: %s", pid, e)
 
 
 def pending_perms(sid=None, answered=False):
@@ -88,7 +128,7 @@ def pending_perms(sid=None, answered=False):
         if now - p["created"] > PERM_TTL:
             PERMS.pop(pid, None)
             continue
-        refresh_desktop_answer(p, now)
+        refresh_desktop_answer(p, now, pid=pid)
         if p.get("run_id") or (p["answer"] is not None) != answered:
             continue
         if sid and p.get("sid") != sid:

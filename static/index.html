@@ -11,24 +11,43 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
 <link rel="icon" type="image/png" href="/static/icon-192.png">
-<link rel="stylesheet" href="/static/style.css?v=m5">
+<link rel="stylesheet" href="/static/style.css?v=m9">
 </head>
 <body>
 
-<!-- 聊天室清單 -->
+<!-- 工作台（首頁）＋ 全部對話：同一個畫面的兩個面板，底部導覽切換 -->
 <div id="screen-list" class="screen">
   <header class="bar">
-    <div class="bar-title">訊息</div>
-    <button id="btn-settings" class="icon-btn" title="設定">⚙︎</button>
+    <div class="bar-mid-left">
+      <div id="list-title" class="bar-title">工作台</div>
+      <div id="home-conn" class="bar-sub">連線中…</div>
+    </div>
+    <select id="proj-select" class="proj-select" aria-label="選專案"><option value="全部">全部專案</option></select>
   </header>
-  <div class="search-wrap">
-    <input id="search" type="search" placeholder="搜尋聊天室…" autocomplete="off">
+  <div id="pane-home" class="pane">
+    <div id="home-tabs" class="home-tabs">
+      <button data-v="todo" class="on">待處理<i>0</i></button>
+      <button data-v="running">執行中<i>0</i></button>
+      <button data-v="done">已完成<i>0</i></button>
+    </div>
+    <div id="home-list" class="home-list">
+      <div class="empty-hint">載入中…</div>
+    </div>
   </div>
-  <div id="proj-chips" class="chips"></div>
-  <div id="room-list" class="room-list">
-    <div class="empty-hint">載入中…</div>
+  <div id="pane-all" class="pane hidden">
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="搜尋聊天室…" autocomplete="off">
+    </div>
+    <div id="room-list" class="room-list">
+      <div class="empty-hint">載入中…</div>
+    </div>
   </div>
-  <button id="btn-new" class="fab" title="開新聊天室">＋</button>
+  <button id="btn-new" class="fab" title="開新聊天室">＋ 新對話</button>
+  <nav id="bottom-nav" class="bottom-nav">
+    <button data-tab="home" class="on"><b>⌂</b><span>工作台</span></button>
+    <button data-tab="all"><b>◷</b><span>活動</span></button>
+    <button data-tab="settings" id="btn-settings"><b>⚙︎</b><span>設定</span></button>
+  </nav>
 </div>
 
 <!-- 對話 -->
@@ -194,6 +213,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=m8"></script>
+<script src="/static/app.js?v=m14"></script>
 </body>
 </html>
