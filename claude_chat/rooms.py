@@ -206,6 +206,8 @@ def _file_infos():
                         "custom_title": head["custom_title"],
                         "compacted": head["compacted"],
                         "preview": tail["preview"],
+                        "last_role": tail["role"],
+                        "last_tail": tail["tail"],
                         "ts": tail["ts"],
                         "last_epoch": _iso_epoch(tail["ts"]) or st.st_mtime,
                         "mtime": st.st_mtime,
@@ -251,6 +253,8 @@ def _codex_info(f):
         if rec.get("timestamp"):
             info["ts"] = rec["timestamp"]
     info["preview"] = _clean_title(last_ai) if last_ai else ("你：" + _clean_title(last_user) if last_user else "")
+    info["role"] = "ai" if last_ai else ("user" if last_user else "")
+    info["tail"] = last_ai[-400:]
     return info
 
 
@@ -281,6 +285,7 @@ def codex_rooms():
             "engine": "codex", "slug": "codex", "sid": info["sid"], "path": str(f),
             "project": cwd, "project_name": _project_name(cwd, "codex"),
             "title": info["title"], "preview": info["preview"], "ts": info["ts"],
+            "last_role": info.get("role", ""), "last_tail": info.get("tail", ""),
             "last_epoch": _iso_epoch(info["ts"]) or st.st_mtime, "mtime": st.st_mtime,
             "archived": False, "live": False, "entry": "codex",
         })
@@ -300,7 +305,7 @@ def api_rooms():
                 st = f.stat()
             except OSError:
                 continue
-            title = preview = ""
+            title = preview = last_role = last_tail = ""
             ts = None
             model = ENGINES[eng]["model"]
             try:
@@ -317,8 +322,10 @@ def api_rooms():
                         if not title:
                             title = _clean_title(txt)
                         preview = "你：" + _clean_title(txt)
+                        last_role, last_tail = "user", ""
                     else:
                         preview = _clean_title(txt)
+                        last_role, last_tail = "ai", txt[-400:]
             except OSError:
                 continue
             if not title:
@@ -327,6 +334,7 @@ def api_rooms():
                 "engine": eng, "slug": API_SLUG[eng], "sid": f.stem, "path": str(f),
                 "project": "", "project_name": ENGINES[eng]["label"], "model": model,
                 "title": title, "preview": preview, "ts": ts,
+                "last_role": last_role, "last_tail": last_tail,
                 "last_epoch": _iso_epoch(ts) or st.st_mtime, "mtime": st.st_mtime,
                 "archived": False, "live": False, "entry": "api",
             })

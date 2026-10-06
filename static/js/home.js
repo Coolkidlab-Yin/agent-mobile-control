@@ -70,7 +70,7 @@ function homeCard(r) {
     (eng !== "claude" ? '<span class="tag eng">' + esc(ENGINE_NAME[eng] || eng) + "</span>" : "") +
     (eng === "claude" && r.app && !r.desktop ? '<span class="tag phone">只在手機</span>' : "") +
     (r.archived ? '<span class="tag arch">封存</span>' : "");
-  const cta = r.badge_kind === "ask" ? "去回答" : r.badge_kind === "perm" ? "去授權" : "";
+  const cta = r.badge_kind === "ask" ? "去回答" : r.badge_kind === "perm" ? "去授權" : r.badge_kind === "next" ? "去回話" : "";
   el.innerHTML =
     '<div class="hc-head">' +
       '<div class="hc-icon' + (eng !== "claude" ? " eng-" + eng : "") + '" style="--h:' + hueFor(r.project_name) + '">' +
@@ -80,11 +80,110 @@ function homeCard(r) {
       (r.badge ? '<span class="badge ' + esc(r.badge_kind) + '">' + esc(r.badge) + "</span>" : "") +
     "</div>" +
     (body ? '<div class="hc-body' + (r.note ? "" : " dim") + '">' + esc(body) + "</div>" : "") +
+    (r.changes ? '<button class="hc-changes">' + changesLine(r.changes) + " ›</button>" : "") +
     (tags ? '<div class="hc-tags">' + tags + "</div>" : "") +
-    (cta ? '<button class="hc-cta">' + cta + "</button>" : "");
+    (cta ? '<div class="hc-actions"><button class="hc-cta">' + cta + "</button>" +
+           (r.badge_kind === "next" ? '<button class="hc-ack">沒事了</button>' : "") + "</div>" : "");
   el.onclick = () => openRoom(r);
   el.oncontextmenu = (e) => { e.preventDefault(); openActions(r); };
+  const chg = el.querySelector(".hc-changes");
+  if (chg) chg.onclick = (e) => { e.stopPropagation(); openChanges(r); };
+  const ack = el.querySelector(".hc-ack");
+  if (ack) ack.onclick = async (e) => {
+    // 「等你回話」是從最後一句猜的；按了就記到伺服器，這句以前的不再算，之後有新回覆會再出現
+    e.stopPropagation();
+    ack.disabled = true;
+    try {
+      await api("/api/home/ack", { method: "POST", headers: { "Content-Type": "application/json" },
+                                   body: JSON.stringify({ sid: r.sid, upto: r.last_epoch }) });
+    } catch (err) { ack.disabled = false; ack.textContent = "沒記到：" + err.message; return; }
+    loadRooms();
+  };
   return el;
+}
+
+/* ---------- 成果與變更（第二階段）：卡片一行 → 抽屜 → 整份差異 ----------
+   每個字都有來源：改了幾個檔來自對話紀錄的 Edit/Write；測試那段來自紀錄裡的指令結果；
+   新鮮度只說「之後又改過／沒再改」，沒有指紋就不說。 */
+const FRESH = { stale: "，之後又改過", current: "，之後沒再改", unverified: "" };
+
+function changesLine(c) {
+  let s = "";
+  if (c.n_files) s += "✎ " + c.n_files + " 個檔";
+  if (c.test) s += (s ? " · " : "") + (c.test.ok ? "✓ " : "✗ ") + esc(c.test.verdict) + (FRESH[c.test.freshness] || "");
+  return s;
+}
+
+function tsClock(ts) {
+  return ts ? new Date(ts * 1000).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }) : "";
+}
+
+async function openChanges(r) {
+  const mask = $("#sheet-changes"), body = $("#chg-body");
+  $("#chg-title").textContent = r.title || "成果與變更";
+  $("#chg-open").onclick = () => { mask.classList.add("hidden"); openRoom(r); };
+  body.innerHTML = '<div class="empty-hint">載入中…</div>';
+  mask.classList.remove("hidden");
+  let d;
+  try { d = await api("/api/changes/" + r.slug + "/" + r.sid); }
+  catch (e) { body.innerHTML = '<div class="empty-hint">拿不到：' + esc(e.message) + "</div>"; return; }
+  const base = "/api/changes/" + r.slug + "/" + r.sid + "/patch?";
+  const repos = d.repos || [], many = repos.length > 1;   // 一個對話可能改到好幾個 repo（在工作區根目錄開的對話尤其如此）
+  const gitUrl = (root, rel) => base + "src=git&root=" + encodeURIComponent(root) + "&rel=" + encodeURIComponent(rel);
+  let h = "";
+  // 1. 本對話改過的檔
+  h += '<div class="setting-label">本對話改過的檔案（' + d.edits.length + "）</div>";
+  if (!d.edits.length) h += '<div class="chg-empty">這個對話沒有改任何檔</div>';
+  for (const e of d.edits) {
+    const g = e.git;
+    let st = "";
+    if (!e.exists) st = "已不存在";
+    else if (g) st = g.untracked ? "新檔，未加進 git" : g.status === "clean" ? "跟 HEAD 一樣" : "+" + (g.add ?? "?") + " −" + (g.del ?? "?");
+    else st = "不在 git 裡";
+    if (g && many) st += " · " + e.root.split("/").pop();
+    const target = g && !g.untracked && g.status !== "clean" ? gitUrl(e.root, e.rel)
+                   : base + "src=session&path=" + encodeURIComponent(e.path);
+    h += '<button class="chg-row" data-url="' + esc(target) + '" data-name="' + esc(e.name) + '">' +
+         '<span class="chg-name">' + esc(e.name) + "</span>" +
+         '<span class="chg-sub">' + esc(e.kinds.join("/")) + " × " + e.n + " · " + esc(tsClock(e.last_ts)) + (st ? " · " + esc(st) : "") + "</span></button>";
+  }
+  // 2. 工作區其他變更：每個 repo 一段
+  for (const rp of repos) {
+    if (!rp.other.count) continue;
+    h += '<div class="setting-label">' + esc(rp.name) + " 裡其他變更（" + rp.other.count + "，不一定跟這個對話有關）</div>";
+    for (const rel of rp.other.files) {
+      h += '<button class="chg-row" data-url="' + esc(gitUrl(rp.root, rel)) + '" data-name="' + esc(rel) + '">' +
+           '<span class="chg-name">' + esc(rel) + "</span></button>";
+    }
+    if (rp.other.count > rp.other.files.length) h += '<div class="chg-empty">還有 ' + (rp.other.count - rp.other.files.length) + " 個沒列</div>";
+  }
+  // 3. 提交
+  let commits = (d.commits || []).map((c) => (c.verified ? "✓ " : "? ") + c.sha + " " + c.subject);
+  for (const rp of repos) {
+    const cs = rp.commits_since.slice(0, 8);   // 跑了好幾天的對話每個 repo 都有一長串，抽屜只放前幾筆
+    commits = commits.concat(cs.map((c) => "· " + (many ? rp.name + " " : "") + c.sha + " " + c.subject));
+    if (rp.commits_since.length > cs.length) commits.push("· " + (many ? rp.name + " " : "") + "…還有 " + (rp.commits_since.length - cs.length) + " 筆（對話期間）");
+  }
+  if (commits.length) {
+    h += '<div class="setting-label">提交（✓＝輸出裡的 sha 在 git 查得到；·＝對話期間 repo 裡出現的）</div>';
+    for (const c of commits) h += '<div class="chg-text">' + esc(c) + "</div>";
+  }
+  // 4. 測試
+  h += '<div class="setting-label">測試（最近 ' + d.tests.length + " 次）</div>";
+  if (!d.tests.length) h += '<div class="chg-empty">這個對話沒有跑過測試指令</div>';
+  for (const t of d.tests.slice().reverse()) {
+    h += '<button class="chg-row" data-text="' + esc(t.tail) + '" data-name="' + esc(t.command.slice(0, 60)) + '">' +
+         '<span class="chg-name">' + (t.ok ? "✓ " : "✗ ") + esc(t.verdict) + (FRESH[t.freshness] || "") + "</span>" +
+         '<span class="chg-sub">' + esc(tsClock(t.ts)) + " · 指令結束狀態 " + (t.exit_code == null ? "不明" : "exit " + t.exit_code) +
+         " · " + esc(t.command.slice(0, 80)) + "</span></button>";
+  }
+  body.innerHTML = h;
+  body.querySelectorAll(".chg-row").forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.url) openDiff(b.dataset.name, b.dataset.url);
+      else openTextView(b.dataset.name, b.dataset.text);
+    };
+  });
 }
 
 /* 連線三層裡的第一層：手機 → 伺服器。綠＝剛同步過；橘＝超過兩個輪詢週期沒拿到新資料；紅＝最近一次拿失敗 */

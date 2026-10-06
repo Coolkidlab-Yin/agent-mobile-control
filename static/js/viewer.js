@@ -122,6 +122,51 @@ async function openFile(url) {
   dvBody.innerHTML = note;
   dvBody.appendChild(pre);
 }
+/* 差異檢視（第二階段）：抓 patch 端點的純文字，逐行上色；跟檔案檢視層共用同一層、同一套返回規則 */
+function renderDiff(text) {
+  const pre = document.createElement("pre");
+  pre.className = "dv-text dv-diff";
+  for (const line of text.split("\n")) {
+    const span = document.createElement("span");
+    span.className = line.startsWith("+") && !line.startsWith("+++") ? "d-add"
+                   : line.startsWith("-") && !line.startsWith("---") ? "d-del"
+                   : line.startsWith("@@") || line.startsWith("###") ? "d-hunk"
+                   : line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("+++") || line.startsWith("---") ? "d-meta" : "";
+    span.textContent = line + "\n";
+    pre.appendChild(span);
+  }
+  return pre;
+}
+async function openDiff(name, url) {
+  pushViewerState();
+  dvTitle.textContent = name;
+  dvBody.className = "dv-body";
+  dvBody.innerHTML = '<div class="sys-note">載入中…</div>';
+  docview.classList.remove("hidden");
+  let text;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    text = await r.text();
+  } catch (err) {
+    dvBody.innerHTML = '<div class="sys-note">打不開：' + esc(err.message) + "</div>";
+    return;
+  }
+  if (docview.classList.contains("hidden") || dvTitle.textContent !== name) return;
+  dvBody.innerHTML = "";
+  dvBody.appendChild(renderDiff(text));
+}
+function openTextView(name, text) {
+  pushViewerState();
+  dvTitle.textContent = name;
+  dvBody.className = "dv-body";
+  docview.classList.remove("hidden");
+  const pre = document.createElement("pre");
+  pre.className = "dv-text";
+  pre.textContent = text;
+  dvBody.innerHTML = "";
+  dvBody.appendChild(pre);
+}
 lightbox.addEventListener("click", (e) => {
   if (e.target === lbImg) lightbox.classList.toggle("zoom");
   else closeViewer();

@@ -169,8 +169,8 @@ def _head_info(path):
 
 
 def _tail_info(path):
-    """讀檔尾：最後訊息預覽、最後時間。"""
-    info = {"preview": "", "ts": None}
+    """讀檔尾：最後訊息預覽、最後時間；role/tail 是最後一句誰說的和它的原文結尾（工作台「等你回話」用）。"""
+    info = {"preview": "", "ts": None, "role": "", "tail": ""}
     try:
         lines = _iter_tail_lines(path, TAIL_BYTES)
     except OSError:
@@ -188,11 +188,14 @@ def _tail_info(path):
             t = _text_of((rec.get("message") or {}).get("content"))
             if t.strip():
                 info["preview"] = _clean_title(t)
+                info["role"] = "ai"
+                info["tail"] = t.strip()[-400:]
                 break
         elif rt == "user":
             t = _text_of((rec.get("message") or {}).get("content"))
             if t.strip() and not _is_meta_user(rec, t):
                 info["preview"] = "你：" + _clean_title(t)
+                info["role"] = "user"
                 break
     return info
 

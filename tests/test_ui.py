@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 import uvicorn
-from helpers import assistant, write_jsonl
+from helpers import assistant, tool_result, tool_use, write_jsonl
 
 from claude_chat import api as A
 from claude_chat import perm as P
@@ -77,6 +77,17 @@ def server(tmp_path_factory):
     note.write_text("這是文件檢視層要顯示的內容", "utf-8")
     recs = [{"type": "user", "cwd": "C:\\work\\uiproj", "entrypoint": "cli",
              "message": {"role": "user", "content": "手機介面測試"}, "timestamp": "2026-10-06T01:00:00Z"}]
+    # 第二階段的成果抽屜：這個對話改過一個檔（留下一個差異塊）、跑過一次測試。工具呼叫在歷史裡是小晶片，不算泡泡。
+    recs.append(assistant([tool_use("Edit", {"file_path": str(note), "old_string": "x", "new_string": "y"}, "ue1")],
+                          ts="2026-10-06T01:00:05Z"))
+    r = tool_result("ue1", "The file %s has been updated successfully." % note, ts="2026-10-06T01:00:06Z")
+    r["toolUseResult"] = {"filePath": str(note), "type": "update", "structuredPatch": [
+        {"oldStart": 1, "oldLines": 2, "newStart": 1, "newLines": 3, "lines": [" a", "+b", " c"]}]}
+    recs.append(r)
+    recs.append(assistant([tool_use("Bash", {"command": "pytest -q"}, "ub1")], ts="2026-10-06T01:00:10Z"))
+    r = tool_result("ub1", "....\n4 passed in 0.3s\n", ts="2026-10-06T01:00:12Z")
+    r["toolUseResult"] = {"stdout": "....\n4 passed in 0.3s\n", "stderr": "", "interrupted": False}
+    recs.append(r)
     recs.append(assistant("看圖：%s\n\n文件：%s\n\n```\n%s\n```\n\n最後一句。" % (pic, note, LONG_CODE)))
     f = write_jsonl(proj / SLUG / (SID + ".jsonl"), recs)
     old = time.time() - 3600
@@ -423,6 +434,33 @@ def test_settings_sheet_snaps_back_when_pull_is_short(page):
     touch_swipe(page, [(x, y), (x, y + 20), (x, y + 40), (x, y + 60)], step_ms=150)   # 又短又慢
     expect(mask).not_to_have_class(re.compile(r"hidden"))
     assert page.evaluate("document.querySelector('#sheet-settings .sheet').style.transform") == ""   # 彈回原位
+
+
+def test_changes_line_opens_drawer_then_diff_view(page):
+    """第二階段：卡片上的成果一行 → 抽屜（檔案、測試） → 點檔案開整份差異（逐行上色），關掉後抽屜還在。"""
+    page.locator("#proj-select").select_option("uiproj")
+    page.locator("#home-tabs button[data-v='done']").click()
+    card = page.locator(".hcard").first
+    line = card.locator(".hc-changes")
+    expect(line).to_contain_text("1 個檔")
+    expect(line).to_contain_text("✓ 4 過")
+    line.click()
+    sheet = page.locator("#sheet-changes")
+    expect(sheet).not_to_have_class(re.compile(r"hidden"))
+    expect(page.locator("#screen-chat")).to_have_class(re.compile(r"hidden-right"))   # 點成果行不是進房間
+    rows = page.locator("#chg-body .chg-row")
+    expect(rows.first).to_contain_text("note.txt")
+    expect(rows.first).to_contain_text("不在 git 裡")        # 測試專案的 cwd 不是 repo，就老實說
+    expect(page.locator("#chg-body")).to_contain_text("✓ 4 過")
+    rows.first.click()
+    expect(page.locator(".docview")).not_to_have_class(re.compile(r"hidden"))
+    expect(page.locator(".dv-title")).to_have_text("note.txt")
+    expect(page.locator(".dv-diff .d-add").first).to_have_text(re.compile(r"\+b"))
+    page.locator(".dv-close").click()
+    expect(page.locator(".docview")).to_have_class(re.compile(r"hidden"))
+    expect(sheet).not_to_have_class(re.compile(r"hidden"))   # 關差異回到抽屜，不是整個收掉
+    page.locator("#sheet-changes .sheet-cancel").click()
+    expect(sheet).to_have_class(re.compile(r"hidden"))
 
 
 def test_settings_sheet_scrolled_down_keeps_scrolling_instead_of_closing(page):

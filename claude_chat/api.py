@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import changes as C
 from . import home as H
 from . import store
 from .bgtasks import list_bg_tasks
@@ -317,10 +318,23 @@ def home(all: int = 0):
     """工作台（手機首頁）：每間房一張卡，附分段與徽章；順便帶清單橫幅要的 pending_perms，手機一趟拿完。
     synced 是伺服器時間，手機拿它當「資料時間」，不跟手機時鐘混。"""
     cards = pending_cards()
-    out = H.build(scan_rooms(show_all=bool(all)), cards, store.last_run_for, observed)
+    out = H.build(scan_rooms(show_all=bool(all)), cards, store.last_run_for, observed,
+                  changes_for=_changes_summary, ack_for=store.ack_for)
     out["pending_perms"] = [c for c in cards if c.get("sid") and not c["waiter_gone"]]
     out["synced"] = time.time()
     return out
+
+
+class AckBody(BaseModel):
+    sid: str
+    upto: float
+
+
+@app.post("/api/home/ack")
+def home_ack(body: AckBody):
+    """工作台「沒事了」：這間房最後那句「等你回話」已知悉，移到已完成；之後有比 upto 新的回覆會自動再出現。"""
+    store.ack_put(body.sid, body.upto)
+    return {"ok": True}
 
 
 @app.get("/api/rooms")
@@ -411,6 +425,93 @@ def history(slug: str, sid: str, before: int | None = None, limit: int = 120):
     except Exception:
         out["last_run"] = None
     return out
+
+
+# ---------- 成果與變更（第二階段） ----------
+
+TEST_FRESH_WINDOW = 600   # 測試落地後幾秒內被伺服器看到，才記「當下」的檔案指紋；更晚看到的只能靠修改順序判新鮮度
+
+
+def _record_tests(sid, path, scan, edited_paths):
+    """第一次看到的測試記進 test_runs：夠新的連同本對話改過檔案的內容指紋一起記。回 {tool_use_id: 指紋}。"""
+    fps = store.test_fingerprints(sid)
+    now = time.time()
+    for t in scan["tests"]:
+        tid = t.get("tool_use_id")
+        if not tid or tid in fps:
+            continue
+        # 離現在前後 10 分鐘內才算「當下」；太久以前的不記，時鐘不對跑到未來的也不記
+        fp = C.file_fingerprint(edited_paths) if abs(now - (t.get("ts") or 0)) <= TEST_FRESH_WINDOW else None
+        store.test_seen(tid, sid, t.get("ts"), fp)
+        fps[tid] = fp
+    return fps
+
+
+def _cwd_of(path):
+    """對話紀錄前幾筆記錄裡的 cwd（Claude 的紀錄每筆都帶；別種引擎的紀錄沒有就回空字串）。"""
+    try:
+        with open(path, "rb") as fh:
+            for i, raw in enumerate(fh):
+                if i > 20:
+                    break
+                try:
+                    rec = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(rec, dict) and isinstance(rec.get("cwd"), str) and rec["cwd"]:
+                    return rec["cwd"]
+    except OSError:
+        pass
+    return ""
+
+
+def _changes_summary(slug, sid):
+    """工作台卡片上那一行的來源。任何狀況都不能讓整個工作台掛掉：拿不到就不顯示。
+    別種引擎（codex／API）的紀錄沒有 Edit/Bash 的 tool_use，掃出來是空的，自然就不顯示。"""
+    try:
+        f = find_room_file(slug, sid)
+        scan = C.scan_cached(f)
+        if not scan["edits"] and not scan["tests"]:
+            return None
+        return C.summary(f, _record_tests(sid, f, scan, scan["edits"].keys()))
+    except Exception:
+        return None
+
+
+@app.get("/api/changes/{slug}/{sid}")
+def changes_view(slug: str, sid: str):
+    """成果與變更（第二階段）：本對話修改紀錄／相關檔案目前差異／其他工作區變更／提交，加測試三欄與新鮮度。"""
+    f = find_room_file(slug, sid)
+    cwd = _cwd_of(f)
+    out = C.changes(f, cwd)
+    scan = C.scan_cached(f)
+    fps = _record_tests(sid, f, scan, [e["path"] for e in out["edits"]])
+    for t in out["tests"]:
+        if t["freshness"] == "unverified" and fps.get(t["tool_use_id"]):
+            t["freshness"] = C.freshness(t, scan, fps[t["tool_use_id"]])
+    return out
+
+
+@app.get("/api/changes/{slug}/{sid}/patch")
+def changes_patch(slug: str, sid: str, src: str = "git", rel: str = "", path: str = "", root: str = ""):
+    """第三層：整份差異。src=git 看某個 repo 工作區對 HEAD 的差異（root 不給就用 cwd 的 repo；只准 changes 列出的檔）；
+    src=session 看本對話的修改塊。"""
+    f = find_room_file(slug, sid)
+    cwd = _cwd_of(f)
+    if src == "session":
+        scan = C.scan_cached(f)
+        e = scan["edits"].get(path)
+        if not e:
+            raise HTTPException(404, "本對話沒有改過這個檔")
+        text = C.session_patch(e) or "（這次修改沒有留下差異塊，可能是整檔寫入）"
+    else:
+        c, allowed = C.allowed_patch_targets(f, cwd)
+        want = root or c["repo"]
+        real = allowed.get((C._norm(want), rel)) if want else None
+        if not real:
+            raise HTTPException(404, "只能看這個對話列出的檔案差異")
+        text = C.git_patch(real, rel) or "（跟 HEAD 沒有差異）"
+    return Response(content=text, media_type="text/plain; charset=utf-8")
 
 
 @app.get("/api/tail/{slug}/{sid}")

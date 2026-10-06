@@ -55,6 +55,18 @@ CREATE TABLE IF NOT EXISTS messages (
   run_id        TEXT,
   created       REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS test_runs (
+  tool_use_id TEXT PRIMARY KEY,    -- 對話紀錄裡那次 Bash 的 id（第二階段：測試結果三欄＋新鮮度指紋）
+  sid         TEXT,
+  ts          REAL,
+  fingerprint TEXT,                -- 伺服器看到這筆測試落地時，本對話改過的檔案當下的內容指紋（JSON）；晚看到的為 NULL
+  seen        REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS acks (
+  sid  TEXT PRIMARY KEY,           -- 工作台「沒事了」：這間房到 upto 這個時間為止的「等你回話」已知悉；之後有新回覆會再出現
+  upto REAL NOT NULL,
+  at   REAL NOT NULL
+);
 """
 
 _conn = None
@@ -129,6 +141,30 @@ def last_run_for(sid, within=3600):
     d = dict(zip(("run_id", "status", "ok", "error", "started", "ended"), r, strict=True))
     d["n_events"] = _q("SELECT COUNT(*) FROM run_events WHERE run_id=?", (d["run_id"],)).fetchone()[0]
     return d
+
+
+# ---------- test_runs（測試落地時的指紋） ----------
+
+def test_seen(tool_use_id, sid, ts, fingerprint):
+    """第一次看到這筆測試就記；之後再看到不覆蓋（指紋要的是「當時」）。fingerprint=None 表示太晚看到、不記。"""
+    _q("INSERT OR IGNORE INTO test_runs(tool_use_id,sid,ts,fingerprint,seen) VALUES(?,?,?,?,?)",
+       (tool_use_id, sid, ts, json.dumps(fingerprint, ensure_ascii=False) if fingerprint else None, time.time()))
+
+
+def test_fingerprints(sid):
+    rows = _q("SELECT tool_use_id, fingerprint FROM test_runs WHERE sid=?", (sid,)).fetchall()
+    return {r[0]: (json.loads(r[1]) if r[1] else None) for r in rows}
+
+
+# ---------- acks（工作台「沒事了」） ----------
+
+def ack_put(sid, upto):
+    _q("INSERT OR REPLACE INTO acks(sid,upto,at) VALUES(?,?,?)", (sid, float(upto), time.time()))
+
+
+def ack_for(sid):
+    row = _q("SELECT upto FROM acks WHERE sid=?", (sid,)).fetchone()
+    return row[0] if row else None
 
 
 # ---------- pending（授權／提問卡） ----------

@@ -11,7 +11,7 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
 <link rel="icon" type="image/png" href="/static/icon-192.png">
-<link rel="stylesheet" href="/static/style.css?v=m10">
+<link rel="stylesheet" href="/static/style.css?v=m12">
 </head>
 <body>
 
@@ -107,6 +107,16 @@
       <button id="btn-delete" class="action-btn danger">🗑 刪除（移到垃圾桶）</button>
     </div>
     <button class="sheet-cancel" data-close="sheet-actions">取消</button>
+  </div>
+</div>
+
+<!-- 成果與變更（第二階段）：本對話改過的檔、工作區其他變更、提交、測試；每個檔點進去看整份差異 -->
+<div id="sheet-changes" class="sheet-mask hidden">
+  <div class="sheet">
+    <div id="chg-title" class="sheet-title">成果與變更</div>
+    <div id="chg-body"><div class="empty-hint">載入中…</div></div>
+    <button id="chg-open" class="hc-cta">進入對話</button>
+    <button class="sheet-cancel" data-close="sheet-changes">關閉</button>
   </div>
 </div>
 
@@ -213,6 +223,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=m14"></script>
+<script src="/static/app.js?v=m18"></script>
 </body>
 </html>

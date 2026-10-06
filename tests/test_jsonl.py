@@ -61,7 +61,11 @@ def test_tail_info_takes_last_visible_message_but_newest_timestamp(tmp_path):
         user("最後是我問的"),
         dict(assistant("旁支不算"), isSidechain=True, timestamp="2026-10-04T09:00:00Z"),
     ])
-    assert J._tail_info(p) == {"preview": "你：最後是我問的", "ts": "2026-10-04T09:00:00Z"}
+    assert J._tail_info(p) == {"preview": "你：最後是我問的", "ts": "2026-10-04T09:00:00Z", "role": "user", "tail": ""}
+    # 最後一句是 Claude 說的：role=ai，tail 是原文結尾（工作台拿它判「等你回話」，不能是截過的 preview）
+    p2 = write_jsonl(tmp_path / "t2.jsonl", [user("問"), assistant("改好了。\n要推嗎？")])
+    t2 = J._tail_info(p2)
+    assert t2["role"] == "ai" and t2["tail"] == "改好了。\n要推嗎？"
 
 
 @pytest.mark.parametrize("cwd,slug,expected", [
