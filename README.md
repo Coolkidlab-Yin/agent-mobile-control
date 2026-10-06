@@ -302,7 +302,7 @@ Hooks are read when a session starts, so sessions already open keep the old beha
 - **Desktop-app sync relies on undocumented behaviour** (the per-session registry files and the `claude://resume` deep link). It works on desktop app 1.40609.1; if a newer release changes either, the room list falls back to transcripts-only and the sync buttons stop doing anything useful.
 - **Single machine, single user.** There's no concept of accounts; concurrency is capped globally (`MAX_CONCURRENT_RUNS`), not per-user.
 - **Reads transcripts from disk on every poll.** Cached by file size/mtime, so it stays cheap up to a few hundred sessions, but it wasn't built to scale past that.
-- **The UI is styled after iOS** (system colours, iMessage-style bubbles, frosted-glass bars, a segmented control for model/effort/appearance). It's all CSS custom properties in `static/style.css`, so retheming means editing the two token blocks at the top, but there is no theme switcher beyond light/dark.
+- **The UI follows iOS conventions** (iMessage-style bubbles, frosted-glass bars, a segmented control for model/effort/appearance) with a warm palette: cream background and orange accent in light mode, black with the same orange in dark mode; the workbench uses three status colours (orange = waiting for you, purple = running, green = done). It's all CSS custom properties in `static/style.css` — the two token blocks at the top plus the workbench block — so retheming means editing those, but there is no theme switcher beyond light/dark.
 
 ## License
 
