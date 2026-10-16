@@ -1,5 +1,9 @@
 # agent-mobile-control
 
+[![80-second intro video: agent-mobile-control](docs/promo-cover.jpg)](https://youtu.be/P8xIAvLL5dg)
+
+▶ [Watch the 80-second intro on YouTube](https://youtu.be/P8xIAvLL5dg) (no narration; on-screen text in Traditional Chinese)
+
 A self-hosted, mobile-friendly web UI for driving your local coding agents like a chat app. Each chat room is one agent session, and opening a room resumes that conversation. Typical setup: run it on your desktop/workstation, reach it from your phone over [Tailscale](https://tailscale.com/) or another private VPN.
 
 Supported engines:
