@@ -928,6 +928,9 @@ html, body { overscroll-behavior-x: none; }
 /* 卡片底部的動作列：主鈕撐滿，「沒事了」是旁邊的次要鈕（等你回話是啟發式判的，要能一鍵按掉） */
 .hc-actions { display: flex; gap: 8px; margin-top: 12px; }
 .hc-actions .hc-cta { margin-top: 0; flex: 1; width: auto; }
+.quota-go { margin: 6px 0; }
+.quota-note { font-size: 13px; color: var(--dim); }
+.quota-go .hc-cta { margin-top: 6px; }
 .hc-ack { padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: transparent; color: var(--dim); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .hc-ack:disabled { opacity: .5; }
 .bottom-nav {

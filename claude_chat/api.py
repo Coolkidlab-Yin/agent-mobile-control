@@ -410,6 +410,7 @@ def history(slug: str, sid: str, before: int | None = None, limit: int = 120):
         out = api_history(f)
     else:
         out = load_history(f, before=before, limit=min(limit, 400))
+    out["file"] = str(f)   # Claude 額度用完改由 Codex 接手時，告訴 Codex 完整紀錄在哪
     out["running_run_id"] = BY_SESSION.get(sid)
     run = RUNS.get(out["running_run_id"]) if out["running_run_id"] else None
     out["n_events"] = len(run.events) if run else 0
@@ -1028,7 +1029,9 @@ app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC / "index.html")
+    # no-cache：沒有它瀏覽器會憑 Last-Modified 自己估一段時間直接用舊首頁，
+    # 舊首頁指著舊的 style.css?v= → 新樣式要等快取過期才生效
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/apple-touch-icon.png")

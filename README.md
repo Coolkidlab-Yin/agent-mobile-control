@@ -316,6 +316,10 @@ powershell -NoProfile -File .\save-claude-token.ps1  # paste it (input is hidden
 
 **When the token expires a year later** (or you move to a new PC or Windows user), run `claude setup-token` and `save-claude-token.ps1` again; the new token overwrites the old file.
 
+### When Claude hits its usage limit
+
+When a Claude Code run stops because the plan's limit is reached (`You've hit your … limit · … resets 12am`), the error gets a note saying when the limit resets and a **Continue with Codex** button. The original Claude conversation can't do anything until the reset — it can't even write a handoff — so the phone does it instead: it opens a new Codex conversation in the same project and sends it the last messages of the Claude conversation (up to 12,000 characters, the limit error itself left out) plus the path of the full transcript, asking it to check the current state on disk and in git and then finish what you last asked for. The button only appears in Claude Code conversations; the takeover needs the Codex CLI installed and logged in on this machine.
+
 ### Troubleshooting
 
 - **Every message from the phone fails with "OAuth session expired and could not be refreshed":** your computer's Claude Code login has expired (about every four weeks). Run `claude auth login` on the computer, then set up the 1-year token so it doesn't happen again — see [Login expiry and the 1-year token](#login-expiry-and-the-1-year-token).

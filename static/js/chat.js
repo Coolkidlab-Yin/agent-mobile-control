@@ -207,7 +207,59 @@ function renderItem(it) {
     ? '<div class="bubble">' + linkifyFiles(esc(it.text).replace(/\n/g, "<br>")) + "</div>"
     : '<div class="bubble">' + linkifyFiles(md(it.text)) + "</div>";
   el.innerHTML = body + (it.ts ? '<div class="msg-time">' + fmtTime(it.ts) + "</div>" : "");
+  const quota = it.role === "user" ? null : quotaButton(it.text);
+  if (quota) el.appendChild(quota);
   return el;
+}
+
+/* ---------- Claude 額度用完 → 改用 Codex 接手 ----------
+   錯誤長這樣："You've hit your monthly spend limit · … · your session limit resets 12am (Asia/Taipei)"。
+   原本的 Claude 對話動不了（連交接檔都寫不了），所以由手機抓最後幾則訊息，開 Codex 新對話接手。 */
+const QUOTA_RE = /hit your [\w ]*limit|usage limit reached/i;
+const quotaReset = (t) => { const m = /resets\s+([^·\n|]+)/i.exec(t || ""); return m ? m[1].trim() : ""; };
+const CODEX_TAKEOVER = (title, reset, file, msgs) => "【Claude 額度用完・改由 Codex 接手】同一個專案裡的 Claude Code 對話「" + title +
+  "」因為額度用完停住了" + (reset ? "（" + reset + " 恢復）" : "") + "。下面是那個對話最後幾則訊息" +
+  (file ? "；完整紀錄在 " + file + "（JSONL，很大，需要時從尾巴讀）" : "") + "。\n" +
+  "先讀懂做到哪裡，用磁碟與 git 確認現況，再接著把本人最後交代的事做完。做法要跟先前的決定一致；拿不準或要做不可逆的事，先停下來問。\n\n" +
+  "--- 最後幾則訊息 ---\n" + msgs;
+
+function quotaButton(text) {
+  if (!QUOTA_RE.test(text || "") || !current || (current.engine || "claude") !== "claude") return null;
+  const reset = quotaReset(text);
+  const wrap = document.createElement("div");
+  wrap.className = "quota-go";
+  wrap.innerHTML = '<div class="quota-note">Claude 額度用完了' + (reset ? "，" + esc(reset) + " 恢復" : "") + "</div>";
+  const btn = document.createElement("button");
+  btn.className = "hc-cta quota-cta";
+  btn.textContent = "改用 Codex 接著做 ›";
+  btn.onclick = () => { btn.disabled = true; codexTakeover(reset).finally(() => { btn.disabled = false; }); };
+  wrap.appendChild(btn);
+  return wrap;
+}
+
+async function codexTakeover(reset) {
+  const from = current;
+  if (!from || !from.sid || !from.slug) return;
+  let data;
+  try { data = await api("/api/history/" + from.slug + "/" + from.sid + "?limit=60"); }
+  catch (e) { sysNote("讀不到這個對話的紀錄：" + e.message, true); return; }
+  // 從最新往回收文字訊息，總長 12000 字內；工具呼叫與額度錯誤本身不帶
+  const picked = [];
+  let budget = 12000;
+  for (const it of data.items.slice().reverse()) {
+    if (it.kind !== "text" || !it.text || QUOTA_RE.test(it.text)) continue;
+    const t = it.text.length > 1500 ? it.text.slice(0, 1500) + "…（截斷）" : it.text;
+    const s = "[" + (it.role === "user" ? "本人" : "Claude") + "] " + t;
+    if (s.length > budget) break;
+    budget -= s.length;
+    picked.unshift(s);
+  }
+  stopWatch();
+  detachRun(false);
+  openRoom({ slug: null, sid: null, engine: "codex", title: from.title || "對話",
+             project: from.project, project_name: from.project_name });
+  inputEl.value = CODEX_TAKEOVER(from.title || "對話", reset, data.file, picked.join("\n\n"));
+  sendMsg();
 }
 
 /* ---------- 捲動 ---------- */
@@ -430,6 +482,9 @@ async function finishRun(doneEv) {
   detachRun(false);
   setSub("");
   if (doneEv.error) sysNote("出了點問題：" + doneEv.error, true);
+  // 額度用完：串流裡那句回覆通常已經帶了按鈕，沒有才補在錯誤下面
+  const quota = doneEv.error && !msgsEl.querySelector(".quota-go") ? quotaButton(doneEv.error) : null;
+  if (quota) { msgsEl.appendChild(quota); scrollBottom(); }
   if (!current) return;
   if (doneEv.sid && !current.sid) current.sid = doneEv.sid;
   // 用檔案裡的正式紀錄取代串流畫面（順便補時間戳）

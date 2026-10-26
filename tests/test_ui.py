@@ -473,3 +473,66 @@ def test_settings_sheet_scrolled_down_keeps_scrolling_instead_of_closing(page):
                        probe="document.querySelector('#sheet-settings .sheet').style.transform")
     assert not any(t.startswith("translateY(") for t in seen), "捲到一半往下滑不該被當成關閉：%s" % seen
     expect(mask).not_to_have_class(re.compile(r"hidden"))
+
+
+QUOTA_ERR = ("You've hit your monthly spend limit · raise it at claude.ai/settings/usage · "
+             "your session limit resets 12am (Asia/Taipei)")   # 10 月真實出現過的原文
+
+
+def test_quota_error_offers_codex_takeover_with_recent_messages(page, server):
+    """Claude 額度用完：那句回覆下面長出「改用 Codex 接著做」，按下去在同一個專案開 Codex 新對話，
+    帶最後幾則訊息、完整紀錄路徑、恢復時間；額度錯誤本身不帶過去。送出攔下來不真的跑 codex。"""
+    sent = []
+
+    def fake_send(route):
+        sent.append(route.request.post_data_json)
+        route.fulfill(json={"run_id": "fake%d" % len(sent)})
+
+    def history_with_quota(route):
+        # 紀錄檔裡那句額度錯誤（-p 也會寫成一句 isApiErrorMessage 的回覆）：交給 Codex 時要濾掉
+        data = route.fetch().json()
+        data["items"].append({"role": "assistant", "kind": "text", "text": QUOTA_ERR})
+        route.fulfill(json=data)
+
+    page.route("**/api/send", fake_send)
+    page.route("**/api/run/fake*/events*", lambda route: route.fulfill(
+        status=200, headers={"Content-Type": "text/event-stream"}, body=""))
+    page.route("**/api/history/**limit=60*", history_with_quota)
+    open_room(page)
+    old_title = page.locator("#chat-title").text_content()
+    page.evaluate("t => msgsEl.appendChild(renderItem({role: 'assistant', kind: 'text', text: t}))", QUOTA_ERR)
+    box = page.locator("#messages .quota-go")
+    expect(box).to_have_count(1)
+    expect(box.locator(".quota-note")).to_contain_text("12am (Asia/Taipei) 恢復")
+    # 結束事件也帶同一個錯誤：畫面上已經有按鈕就不再補第二個
+    page.evaluate("t => finishRun({ok: false, error: t})", QUOTA_ERR)
+    expect(page.locator("#messages .quota-go")).to_have_count(1)
+
+    box.locator(".quota-cta").click()
+    # 先抓紀錄才開新房：舊房本來就有使用者泡泡，要等的是 Codex 新房裡送出的那句
+    page.wait_for_function("current && current.engine === 'codex' && "
+                           "document.querySelectorAll('#messages .msg.user').length >= 1")
+    expect(page.locator("#chat-title")).to_have_text(old_title)
+    assert len(sent) == 1
+    body = sent[0]
+    assert body["engine"] == "codex" and "sid" not in body
+    assert body["project"] == "C:\\work\\uiproj"
+    text = body["text"]
+    assert text.startswith("【Claude 額度用完・改由 Codex 接手】") and "12am (Asia/Taipei) 恢復" in text
+    assert "[本人] 手機介面測試" in text and "最後一句" in text   # 歷史裡第一句與最後一句都帶到
+    assert SID + ".jsonl" in text and "hit your" not in text
+
+
+FINISH_AND_COUNT = ("t => { finishRun({ok: false, error: t}); "
+                    "return document.querySelectorAll('#messages .quota-go').length; }")
+
+
+def test_quota_button_only_for_claude_rooms(page):
+    open_room(page)
+    page.evaluate("current.engine = 'codex'")
+    # 當下就數：finishRun 0.4 秒後會重載紀錄把畫面清掉，用 expect 等「變成 0」會空過
+    n = page.evaluate(FINISH_AND_COUNT, QUOTA_ERR)
+    assert n == 0
+    page.evaluate("current.engine = 'claude'")
+    n = page.evaluate(FINISH_AND_COUNT, QUOTA_ERR)
+    assert n == 1
