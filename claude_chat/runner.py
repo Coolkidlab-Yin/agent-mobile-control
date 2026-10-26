@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import subprocess
+import time
 import uuid
 
 from .bridge import ASK_MCP_CONFIG, ASK_MCP_READY, ASK_SYSTEM_PROMPT, PERM_READY, PERM_SETTINGS
@@ -14,6 +15,85 @@ from .rooms import remember_app_sid
 from .runs import BY_SESSION, _emit, _gc_run
 
 # ---------- 執行 claude ----------
+
+# /login 的續期 token 約四週到期（實測 10-26 重登後期限是 11-23），到期後 -p 一律
+# 「OAuth session expired」；所以備一張 `claude setup-token` 的一年期通行證，用 save-claude-token.ps1 存成 DPAPI 檔。
+_CREDS = os.path.expanduser(r"~\.claude\.credentials.json")
+_TOKEN_FILE = os.path.expanduser(r"~\.claude\secrets\claude-oauth-token.dpapi")
+TOKEN_DAYS = 365
+_LOGIN_FIX = ("到電腦的終端機跑 claude auth login 重新登入。不想每幾週就來一次：照 README「登入過期」一節，"
+              "跑 claude setup-token 產一年期通行證，再跑 save-claude-token.ps1 存起來。")
+_TOKEN_FIX = "到電腦重跑 claude setup-token 產新的通行證，再跑 save-claude-token.ps1 存起來（會蓋掉舊的）。"
+_AUTH_ERRS = ("OAuth session expired", "OAuth token has expired", "Please run /login", "Not logged in",
+              "authentication_error", "Invalid bearer token")
+
+
+def _login_days_left():
+    """/login 存的登入還剩幾天（續期期限）。已失效回負數；沒有這個檔（沒登入過、macOS 存在鑰匙圈）回 None。"""
+    try:
+        with open(_CREDS, encoding="utf-8") as f:
+            o = json.load(f)["claudeAiOauth"]
+    except OSError:
+        return None
+    except (ValueError, KeyError, TypeError):
+        return -1.0
+    if not o.get("expiresAt"):
+        return -1.0   # 續期被拒時 CLI 把 expiresAt 清成 0（10-22 實測）
+    exp = o.get("refreshTokenExpiresAt")
+    return (exp / 1000 - time.time()) / 86400 if exp else float("inf")
+
+
+def auth_warning():
+    """首頁橫幅：通行證 30 天內到期、或 /login 失效/3 天內失效又沒備通行證。沒事回空字串。"""
+    try:
+        saved = os.path.getmtime(_TOKEN_FILE)
+    except OSError:
+        saved = None
+    if saved is not None:
+        # ponytail: setup-token 不給到期日，用存檔時間＋365 天推；產完隔很久才存會推晚
+        due = saved + TOKEN_DAYS * 86400
+        left = (due - time.time()) / 86400
+        if left > 30:
+            return ""
+        when = "已經過了到期日" if left < 0 else f"約 {int(left)} 天後到期"
+        return f"一年期通行證{when}（{time.strftime('%Y-%m-%d', time.localtime(due))}），到期後手機開新對話會失敗。{_TOKEN_FIX}"
+    left = _login_days_left()
+    if left is None or left > 3:
+        return ""
+    if left < 0:
+        return "電腦上的 Claude 登入過期了，手機開新對話會失敗。" + _LOGIN_FIX
+    return f"電腦上的 Claude 登入約 {max(int(left), 0)} 天後過期，過期後手機開新對話會失敗。" + _LOGIN_FIX
+
+
+def _auth_hint(err, used_token):
+    """登入失敗的錯誤後面接上修法，手機上看得懂該去電腦做什麼。"""
+    if not any(s in err for s in _AUTH_ERRS):
+        return err
+    return err + "\n\n" + ("一年期通行證失效了（過期或被撤銷）：" + _TOKEN_FIX if used_token
+                           else "電腦上的 Claude 登入過期了：" + _LOGIN_FIX)
+
+
+def _fallback_token():
+    """save-claude-token.ps1 存的一年期 token（DPAPI CurrentUser）；沒檔或解不開回 None。"""
+    try:
+        with open(_TOKEN_FILE, encoding="ascii") as f:
+            blob = bytes.fromhex(f.read().strip())
+    except (OSError, ValueError):
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    src, out = BLOB(len(blob), ctypes.cast(ctypes.c_char_p(blob), ctypes.POINTER(ctypes.c_char))), BLOB()
+    if not ctypes.windll.crypt32.CryptUnprotectData(ctypes.byref(src), None, None, None, None, 0, ctypes.byref(out)):
+        log.warning("一年期通行證解不開（換了帳號或電腦？）：%s", _TOKEN_FILE)
+        return None
+    try:
+        return ctypes.string_at(out.pbData, out.cbData).decode("utf-16-le")
+    finally:
+        ctypes.windll.kernel32.LocalFree(out.pbData)
 
 async def run_codex(run, text, mode):
     """Codex：codex exec --json（新對話）或 codex exec resume <id>（續聊）。"""
@@ -212,6 +292,11 @@ async def run_claude(run, text, mode, extra_args=()):
         child_env["CLAUDE_CHAT_PORT"] = str(PORT)
         # ask_user 要等真人在手機上點選，工具呼叫逾時放寬到 10 分鐘
         child_env["MCP_TOOL_TIMEOUT"] = "600000"
+        # /login 死了才改用一年期 token：token 拿不到 claude.ai 連接器，登入還活著就別蓋過它
+        left = _login_days_left()
+        if (left is None or left < 0) and (tok := _fallback_token()):
+            child_env["CLAUDE_CODE_OAUTH_TOKEN"] = tok
+        used_token = "CLAUDE_CODE_OAUTH_TOKEN" in child_env   # 也可能是伺服器本來的環境變數
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdin=asyncio.subprocess.PIPE,
@@ -278,14 +363,14 @@ async def run_claude(run, text, mode, extra_args=()):
                     "kind": "done",
                     "ok": ev.get("subtype") == "success",
                     "sid": ev.get("session_id") or run.sid,
-                    "error": (ev.get("result") or "")[:500] if ev.get("is_error") else "",
+                    "error": _auth_hint((ev.get("result") or "")[:500], used_token) if ev.get("is_error") else "",
                     "duration_ms": ev.get("duration_ms"),
                 })
         await proc.wait()
         await err_task
         if not got_done:
             msg = stderr_tail.strip() or f"claude 結束了但沒有回傳結果（exit {proc.returncode}）"
-            await _emit(run, {"kind": "done", "ok": False, "sid": run.sid, "error": msg[-500:]})
+            await _emit(run, {"kind": "done", "ok": False, "sid": run.sid, "error": _auth_hint(msg[-500:], used_token)})
         elif run.is_new and run.sid and CONFIG["desktop_sync"] == "auto":
             # 手機開的新對話做完第一輪就登錄進桌面 app（桌面 app 會切到這個 session，一次而已）
             try:

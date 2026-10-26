@@ -22,6 +22,19 @@ function renderPermBanner() {
   bar.onclick = () => { if (room) openRoom(room); };
 }
 
+/* 電腦上的 Claude 登入快過期／已過期（伺服器看憑證檔與通行證存檔日判斷），清單頂端提示怎麼修 */
+function renderAuthBanner(msg) {
+  let bar = $("#auth-banner");
+  if (!msg) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "auth-banner";
+    bar.className = "perm-banner auth-banner";
+    $("#screen-list").insertBefore(bar, $("#pane-home"));   // 標題列下方：工作台與全部對話兩頁都看得到
+  }
+  bar.innerHTML = icon("alert") + esc(msg);
+}
+
 async function loadRooms(silent) {
   // /api/home 一趟帶回：清單用的 room 欄位＋工作台用的分段與徽章＋橫幅用的 pending_perms
   try {
@@ -33,6 +46,7 @@ async function loadRooms(silent) {
     renderChips();
     renderRooms();
     renderPermBanner();
+    renderAuthBanner(data.auth_warning);
     renderHome();
     renderConn();
   } catch (e) {

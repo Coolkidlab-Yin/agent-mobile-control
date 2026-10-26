@@ -19,7 +19,7 @@ def test_home_endpoint_returns_cards_counts_and_pending_perms(client, monkeypatc
     monkeypatch.setattr(A, "pending_cards", lambda sid=None: [
         {"sid": "h1", "tool": "AskUserQuestion", "waiter_gone": False, "questions": [{"question": "Q"}], "created": 1}])
     d = client.get("/api/home").json()
-    assert set(d) == {"cards", "counts", "pending_perms", "synced"}
+    assert set(d) == {"auth_warning", "cards", "counts", "pending_perms", "synced"}
     assert d["cards"][0]["section"] == "todo" and d["cards"][0]["note"] == "Q"
     assert d["counts"] == {"todo": 1, "running": 0, "done": 0}
     assert d["pending_perms"][0]["sid"] == "h1"

@@ -39,7 +39,7 @@ If any of this is unacceptable for your situation, don't run this tool — it wa
 
 - **Windows.** The server currently relies on a few Windows-specific APIs (`ctypes.windll` for process-liveness checks, `taskkill` to stop a run, `CREATE_NO_WINDOW`, and an auto-detected Tailscale executable path). See [Limitations](#limitations) for what porting to macOS/Linux would involve.
 - **Python 3.10+** (tested on 3.11).
-- **Node.js + the Claude Code CLI**, installed and already logged in — i.e. running `claude` from a terminal works.
+- **Node.js + the Claude Code CLI**, installed and already logged in — i.e. running `claude` from a terminal works. That login expires roughly every four weeks; set up the 1-year token once so your phone doesn't break when it does — see [Login expiry and the 1-year token](#login-expiry-and-the-1-year-token).
 - **Tailscale (optional but recommended)** if you want to reach the server from your phone. Without it, the server only binds to `127.0.0.1` (local machine only).
 
 ## Installation
@@ -293,7 +293,32 @@ Hooks are read when a session starts, so sessions already open keep the old beha
 
 `perm-bridge.js` also works as a library. If you already have a PreToolUse hook that answers `ask` for dangerous commands (a `rm -rf` / `git push --force` guard, say), that `ask` silently becomes a deny under `-p`, so the phone can never approve it. Have the hook `require("/path/to/perm-bridge.js").askPhone({ tool_name, tool_input, reason })` when `CLAUDE_CHAT_RUN_ID` is set: it resolves to `allow` / `deny` / `timeout` / `unavailable`, the phone shows the `reason` in a red warning block, and the hook can answer accordingly (fall back to `ask` on `unavailable`). Give that hook a generous `timeout` (600 s) in `settings.json` so it can wait for you. No answer within ~9.5 minutes counts as a deny, and Claude is told to explain where it stopped rather than retry. Read-only tools (Read, Grep, Glob…) never ask.
 
+### Login expiry and the 1-year token
+
+Every run you start from your phone is a `claude -p` process on your computer, and it uses the login that `claude auth login` saved (`~/.claude/.credentials.json`). **That login expires after roughly four weeks** (observed: a fresh login on Oct 26 had a refresh deadline of Nov 23; Anthropic doesn't publish the exact lifetime). Once it expires, every message from your phone fails with `OAuth session expired and could not be refreshed`. The Claude desktop app keeps its own login, so it looks as if *only the phone* is broken.
+
+**Set this up once and it stays working for a year:**
+
+```powershell
+claude auth login                                    # restore the normal login first
+claude setup-token                                   # prints a 1-year token (sk-ant-oat01-...); copy it
+powershell -NoProfile -File .\save-claude-token.ps1  # paste it (input is hidden)
+```
+
+- The token is saved to `~/.claude/secrets/claude-oauth-token.dpapi`, encrypted with Windows DPAPI: only this Windows user on this machine can decrypt it. It never goes into git or a `.env` file.
+- Before each run the server checks the normal login first. **While it is still valid, the server uses it** (so claude.ai connectors such as Gmail or Calendar keep working). **Only when it has expired does the server fall back to the token** (`CLAUDE_CODE_OAUTH_TOKEN`). Runs that use the token don't get claude.ai connectors or Remote Control; local MCP servers work as usual.
+- Your own scheduled `claude -p` jobs can read the same file — the snippet is in the header comment of `save-claude-token.ps1`.
+
+**The phone warns you before and when it breaks:**
+
+- A red banner appears at the top of the home screen in three cases: the normal login has expired and no token is saved; the normal login expires within 3 days; the token expires within 30 days. The token's expiry is estimated as *save date + 365 days* (`setup-token` doesn't report one), so save the token right after you generate it.
+- When a run fails because of authentication, the error message ends with the exact fix. An expired login and an expired token get different instructions.
+
+**When the token expires a year later** (or you move to a new PC or Windows user), run `claude setup-token` and `save-claude-token.ps1` again; the new token overwrites the old file.
+
 ### Troubleshooting
+
+- **Every message from the phone fails with "OAuth session expired and could not be refreshed":** your computer's Claude Code login has expired (about every four weeks). Run `claude auth login` on the computer, then set up the 1-year token so it doesn't happen again — see [Login expiry and the 1-year token](#login-expiry-and-the-1-year-token).
 
 - **"claude" can't be found / server won't start a run:** the executable lookup logic lives in `resolve_claude_cmd()` in `claude_chat/config.py`. It tries, in order: the Claude Code CLI's own `claude.exe`, then `node` + `cli.js` directly, then falls back to `claude.cmd` via `cmd.exe`. If a Claude Code / npm update moves things, start here.
 - **The phone shows a permission/question card for something you already answered on the desktop, sometimes several steps old:** the server decides "already answered" by finding the tool result in the session transcript. It now scans from 1 MB before the card was created to the end of the file; older builds looked only at the last 256 KB, which a busy desktop session outgrows within minutes, so the card lingered for the full hour TTL.

@@ -326,3 +326,67 @@ def test_run_api_http_errors_are_explained(api_env):
     asyncio.run(RN.run_api(run, "hi", "grok", None))
     assert run.events[-1]["error"] == "HTTP 500：server down"
     assert not BY_SESSION
+
+
+# ---------- 登入過期：通行證備援、錯誤接修法、首頁橫幅 ----------
+
+def _creds(tmp_path, monkeypatch, oauth):
+    p = tmp_path / "creds.json"
+    p.write_text(json.dumps({"claudeAiOauth": oauth}), encoding="utf-8")
+    monkeypatch.setattr(RN, "_CREDS", str(p))
+    monkeypatch.setattr(RN, "_TOKEN_FILE", str(tmp_path / "missing.dpapi"))
+
+
+def _ms(days):
+    return (RN.time.time() + days * 86400) * 1000
+
+
+def test_token_only_injected_when_login_is_dead(spawn, tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(RN, "_fallback_token", lambda: "tok-123")
+    spawn["out"] = lines({"type": "result", "subtype": "success", "session_id": SID})
+    _creds(tmp_path, monkeypatch, {"expiresAt": _ms(0.1), "refreshTokenExpiresAt": _ms(20)})
+    asyncio.run(RN.run_claude(mk_run(), "x", "auto"))
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in spawn["calls"][-1]["env"]   # 登入還活著：保留 claude.ai 連接器
+    _creds(tmp_path, monkeypatch, {"expiresAt": 0, "refreshTokenExpiresAt": _ms(-3)})
+    asyncio.run(RN.run_claude(mk_run(run_id="r2"), "x", "auto"))
+    assert spawn["calls"][-1]["env"]["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-123"
+
+
+def test_auth_error_gets_the_right_fix(spawn, tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    _creds(tmp_path, monkeypatch, {"expiresAt": 0})
+    err = "Failed to authenticate: OAuth session expired and could not be refreshed"
+    spawn["out"] = lines({"type": "result", "subtype": "error", "is_error": True, "result": err, "session_id": SID})
+    monkeypatch.setattr(RN, "_fallback_token", lambda: None)
+    run = mk_run()
+    asyncio.run(RN.run_claude(run, "x", "auto"))
+    assert run.events[-1]["error"].startswith(err) and "claude auth login" in run.events[-1]["error"]
+    monkeypatch.setattr(RN, "_fallback_token", lambda: "tok")
+    run = mk_run(run_id="r2")
+    asyncio.run(RN.run_claude(run, "x", "auto"))
+    assert "通行證失效" in run.events[-1]["error"] and "claude setup-token" in run.events[-1]["error"]
+    assert RN._auth_hint("跑太多輪了", False) == "跑太多輪了"
+
+
+def test_auth_warning_banner(tmp_path, monkeypatch):
+    _creds(tmp_path, monkeypatch, {"expiresAt": _ms(0.1), "refreshTokenExpiresAt": _ms(20)})
+    assert RN.auth_warning() == ""
+    _creds(tmp_path, monkeypatch, {"expiresAt": _ms(0.1), "refreshTokenExpiresAt": _ms(2.5)})
+    assert "約 2 天後過期" in RN.auth_warning()
+    _creds(tmp_path, monkeypatch, {"expiresAt": 0})
+    assert "登入過期了" in RN.auth_warning()
+    monkeypatch.setattr(RN, "_CREDS", str(tmp_path / "nope.json"))   # 沒憑證檔（macOS、沒登入過）不亂報
+    assert RN.auth_warning() == ""
+
+    tok = tmp_path / "t.dpapi"
+    tok.write_text("00", encoding="ascii")
+    monkeypatch.setattr(RN, "_TOKEN_FILE", str(tok))
+    monkeypatch.setattr(RN, "_CREDS", str(tmp_path / "creds.json"))   # 有通行證就不再為 /login 失效喊（這份 expiresAt=0）
+    assert RN.auth_warning() == ""
+    old = RN.time.time() - 350 * 86400
+    RN.os.utime(tok, (old, old))
+    assert "約 14 天後到期" in RN.auth_warning() or "約 15 天後到期" in RN.auth_warning()
+    old = RN.time.time() - 400 * 86400
+    RN.os.utime(tok, (old, old))
+    assert "已經過了到期日" in RN.auth_warning()

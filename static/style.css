@@ -261,6 +261,7 @@ body {
   background: var(--bad); color: #fff; cursor: pointer;
 }
 .perm-banner span { text-decoration: underline; margin-left: 4px; }
+.auth-banner { cursor: default; user-select: text; -webkit-user-select: text; }
 .perm-card .perm-btns { display: flex; gap: 8px; margin: 6px 0; }
 .perm-card .perm-btns .ask-opt { flex: 1; text-align: center; margin: 0; }
 .perm-card .perm-deny { border-color: var(--bad); }

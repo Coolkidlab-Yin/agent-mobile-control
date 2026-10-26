@@ -81,7 +81,7 @@ from .perm import (
     waiter_gone,
 )
 from .rooms import _codex_info, _room_cache, _safe_name, find_room_file, load_overlay, save_overlay, save_title, scan_rooms
-from .runner import run_api, run_claude, run_codex
+from .runner import auth_warning, run_api, run_claude, run_codex
 from .runs import BY_SESSION, RUNS, Run, _emit, register, restore_from_store
 from .search import search_rooms
 from .usage import plan_limits, token_usage
@@ -322,6 +322,7 @@ def home(all: int = 0):
                   changes_for=_changes_summary, ack_for=store.ack_for)
     out["pending_perms"] = [c for c in cards if c.get("sid") and not c["waiter_gone"]]
     out["synced"] = time.time()
+    out["auth_warning"] = auth_warning()
     return out
 
 
