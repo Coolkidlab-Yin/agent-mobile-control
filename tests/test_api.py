@@ -93,6 +93,33 @@ def test_status_and_rooms_shapes(client):
     assert r.status_code == 200 and set(r.json()) == {"rooms", "pending_perms"}
 
 
+def test_done_run_still_registered_is_not_offered_for_attach(client, tmp_path, monkeypatch):
+    """10-29：claude -p 收到 result 後還有背景工作，行程活著、BY_SESSION 還在但 run 已 done。
+    status／tail／history 若還說「在跑」，手機會接上→串流立刻結束→從頭重播到 done→再接，畫面每 2.5 秒閃。"""
+    from helpers import assistant, write_jsonl
+
+    from claude_chat import rooms as R
+    from claude_chat.runs import BY_SESSION, RUNS, Run
+    sid = "dddddddd-0000-0000-0000-000000000029"
+    monkeypatch.setattr(R, "PROJECTS_DIR", tmp_path)
+    write_jsonl(tmp_path / "slug" / (sid + ".jsonl"), [assistant("回完了")])
+    run = Run("r29", "slug", sid, str(tmp_path))
+    RUNS[run.id], BY_SESSION[sid] = run, run.id
+    try:
+        assert client.get("/api/status").json()["running"][sid]["run_id"] == "r29"   # 還在跑：照常接
+        assert client.get("/api/tail/slug/" + sid).json()["running"] is True
+        run.done = True
+        assert sid not in client.get("/api/status").json()["running"]
+        assert client.get("/api/tail/slug/" + sid).json()["running"] is False
+        h = client.get("/api/history/slug/" + sid).json()
+        assert h["run"] is None and h["running_run_id"] is None
+        r = client.post("/api/send", json={"text": "再一句", "sid": sid, "slug": "slug"})
+        assert r.status_code == 409   # 行程還活著：送新訊息照擋，免得兩個行程寫同一份紀錄
+    finally:
+        RUNS.pop(run.id, None)
+        BY_SESSION.pop(sid, None)
+
+
 def test_history_returns_pending_and_answered_desktop_cards(client, tmp_path, monkeypatch):
     """10-06：房間有即時連線時手機只從 n_events 之後接事件，早就開著的卡要靠 history 補回來，
     不然只看得到轉圈圈的 AskUserQuestion、沒有卡。"""

@@ -411,8 +411,8 @@ def history(slug: str, sid: str, before: int | None = None, limit: int = 120):
     else:
         out = load_history(f, before=before, limit=min(limit, 400))
     out["file"] = str(f)   # Claude 額度用完改由 Codex 接手時，告訴 Codex 完整紀錄在哪
-    out["running_run_id"] = BY_SESSION.get(sid)
-    run = RUNS.get(out["running_run_id"]) if out["running_run_id"] else None
+    run = _attachable_run(sid)
+    out["running_run_id"] = run.id if run else None
     out["n_events"] = len(run.events) if run else 0
     out["busy"] = (not eng) and _room_busy(f)
     out["run"] = ({"run_id": out["running_run_id"], "n_events": out["n_events"],
@@ -524,7 +524,7 @@ def tail(slug: str, sid: str, offset: int = 0):
         return {"items": [], "offset": offset, "busy": False, "live": False}
     items, new_off = tail_items(f, max(0, offset))
     return {"items": items, "offset": new_off, "busy": _room_busy(f),
-            "live": live_peer_for(sid) is not None, "running": sid in BY_SESSION,
+            "live": live_peer_for(sid) is not None, "running": _attachable_run(sid) is not None,
             "pending": pending_perms(sid), "answered": pending_perms(sid, answered=True)}
 
 
@@ -814,13 +814,23 @@ def observe_event(body: ObserveBody):
     return {"ok": True, "matched": matched}
 
 
+def _attachable_run(sid):
+    """手機該接上事件流的 run：登記著而且還沒 done。
+    claude -p 收到 result 後若還有背景工作，行程會活著、等通知再自己跑一輪（10-29 實測）；那段時間 BY_SESSION
+    還在（送訊息照擋，免得兩個行程寫同一份紀錄），但 run 已 done，事件流一接就結束。讓手機去接會變成
+    接上→串流結束→從 0 重播到 done→收尾→旁觀又看到 running→再接，畫面每 2.5 秒閃一次。後續那輪交給旁觀模式看檔案。"""
+    run = RUNS.get(BY_SESSION.get(sid) or "")
+    return run if run and not run.done else None
+
+
 @app.get("/api/status")
 def status():
     running = {}
-    for sid, rid in BY_SESSION.items():
-        run = RUNS.get(rid)
-        running[sid] = {"run_id": rid, "n_events": len(run.events) if run else 0,
-                        "peer": bool(run and getattr(run, "peer", False))}
+    for sid in list(BY_SESSION):
+        run = _attachable_run(sid)
+        if run:
+            running[sid] = {"run_id": run.id, "n_events": len(run.events),
+                            "peer": bool(getattr(run, "peer", False))}
     # observed：mod 回報的「確認執行中」（桌面對話也有，不限手機起的 run）
     return {"running": running, "observed": observed_all()}
 
