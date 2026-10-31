@@ -234,6 +234,14 @@ function renderItem(it) {
     ? '<div class="bubble">' + linkifyFiles(esc(it.text).replace(/\n/g, "<br>")) + "</div>"
     : '<div class="bubble">' + linkifyFiles(md(it.text)) + "</div>";
   el.innerHTML = body + (it.ts ? '<div class="msg-time">' + fmtTime(it.ts) + "</div>" : "");
+  const handoff = it.role === "user" ? null : RELAY_PATH_RE.exec(it.text || "");
+  if (handoff) {
+    const btn = document.createElement("button");
+    btn.className = "hc-cta relay-go";
+    btn.textContent = "在新對話接手 ›";
+    btn.onclick = () => { btn.disabled = true; relayResume(handoff[1]); };
+    el.appendChild(btn);
+  }
   const quota = it.role === "user" ? null : quotaButton(it.text);
   if (quota) el.appendChild(quota);
   return el;
@@ -288,6 +296,42 @@ async function codexTakeover(reset) {
   inputEl.value = CODEX_TAKEOVER(from.title || "對話", reset, data.file, picked.join("\n\n"));
   sendMsg();
 }
+
+/* ---------- 一鍵交接 ----------
+   第一步把交接指令送進這個對話（直送桌面或接著跑，跟一般訊息同一條路）；它寫好交接檔後回覆最後一行
+   HANDOFF_PATH: <路徑>，那則訊息下面就長出「在新對話接手」，同一個專案開新對話、帶接手指令。
+   不靠 /clear：手機直送進去的是一般文字，不是斜線指令。 */
+const RELAY_PATH_RE = /^HANDOFF_PATH:\s*[`"']?(.+?)[`"']?\s*$/m;
+const RELAY_PROMPT = "【手機一鍵交接】本人在手機按了交接：這個對話要換到新對話接手。現在只做交接，不開新工作。\n" +
+  "照你的交接慣例（有 context-continuity 之類的交接規範就照它）寫一份交接檔，讓新對話不看這段對話也能接手：" +
+  "目標與完成定義、已完成且驗證過的事、未完成與風險、決策與失敗過的做法、檔案與 git 狀態、驗證證據、下一步。\n" +
+  "寫完後回覆的最後一行只寫：HANDOFF_PATH: <交接檔的絕對路徑>\n" +
+  "如果現在沒辦法安全交接（例如做到一半的部署或資料搬移），不要寫這一行，改說明原因。";
+const RELAY_RESUME = (path) => "【手機一鍵交接・接手】讀 " + path + " 接手上一段對話。" +
+  "先用磁碟、git 與實跑結果驗證交接內容（工作目錄、git status、重讀相關檔案、對照驗證證據），" +
+  "確認後回報接手狀態與下一步，等我確認再繼續動手。";
+
+function relayResume(path) {
+  const from = current;
+  if (!from) return;
+  // 房間直接換房間（平常是先返回再開）：舊房的事件流與旁觀計時要先收，不然新房被當成「還在跑」送不出去
+  stopWatch();
+  detachRun(false);
+  // 名字沿用舊對話（交接後換名字會搞不清楚這間在做什麼），送出時帶 name 寫進新對話
+  openRoom({ slug: null, sid: null, engine: "claude", title: from.title || "對話", name: from.title || "",
+             project: from.project, project_name: from.project_name });
+  inputEl.value = RELAY_RESUME(path);
+  sendMsg();
+}
+
+$("#btn-relay").onclick = () => {
+  $("#sheet-room").classList.add("hidden");
+  if (!current || !current.sid) { sysNote("新對話還沒內容，不用交接"); return; }
+  // 直送中的桌面工作也擋：插話會打斷做到一半的事，交接檔要在停下來的狀態寫
+  if (activeRun) { sysNote("這個對話還在跑，等它停下來再交接"); return; }
+  inputEl.value = RELAY_PROMPT;
+  sendMsg();
+};
 
 /* ---------- 捲動 ---------- */
 function scrollBottom(force) {
@@ -396,7 +440,7 @@ async function sendMsg() {
       if (effEffort() !== "default") body.effort = effEffort();
     }
     if (current.sid) { body.sid = current.sid; body.slug = current.slug; }
-    else body.project = current.project;
+    else { body.project = current.project; if (current.name) body.name = current.name; }
     body.client_msg_id = sendId(text);
     const r = await api("/api/send", {
       method: "POST",

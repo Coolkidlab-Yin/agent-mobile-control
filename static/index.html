@@ -11,7 +11,7 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icon-180.png">
 <link rel="icon" type="image/png" href="/static/icon-192.png">
-<link rel="stylesheet" href="/static/style.css?v=m14">
+<link rel="stylesheet" href="/static/style.css?v=m15">
 </head>
 <body>
 
@@ -120,6 +120,15 @@
   </div>
 </div>
 
+<!-- 一次清完：所有對話在等的授權卡與選擇題排成一串，不用一間一間進去 -->
+<div id="sheet-inbox" class="sheet-mask hidden">
+  <div class="sheet">
+    <div id="inbox-title" class="sheet-title">等你回答</div>
+    <div id="inbox-body"><div class="empty-hint">載入中…</div></div>
+    <button class="sheet-cancel" data-close="sheet-inbox">關閉</button>
+  </div>
+</div>
+
 <!-- 這個對話在背景跑的指令／子代理／工作流程 -->
 <div id="sheet-bg" class="sheet-mask hidden">
   <div class="sheet">
@@ -140,6 +149,8 @@
       <button data-v="default">預設</button><button data-v="max">最深</button><button data-v="high">多</button><button data-v="medium">中</button><button data-v="low">快</button>
     </div>
     <div class="setting-note">「預設」= 用設定頁裡的全域選擇。從下一句開始生效。</div>
+    <button id="btn-relay" class="action-btn">🔁 一鍵交接（寫交接檔，再開新對話接手）</button>
+    <div class="setting-note">對話太長、開始忘東忘西時用。它寫好交接檔後，那則回覆下面會出現「在新對話接手」。</div>
     <button class="sheet-cancel" data-close="sheet-room">關閉</button>
   </div>
 </div>
@@ -223,6 +234,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=m20"></script>
+<script src="/static/app.js?v=m21"></script>
 </body>
 </html>

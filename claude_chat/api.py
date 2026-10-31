@@ -167,6 +167,7 @@ class SendBody(BaseModel):
     effort: str | None = None
     engine: str | None = None
     client_msg_id: str = ""   # 手機每次送出前產生；重送沿用同一個 → 伺服器不會跑第二次
+    name: str = ""            # 開新對話時的名稱（一鍵交接沿用舊對話的名字）；接著聊既有對話時不用
 
 
 @app.get("/api/health")
@@ -924,6 +925,9 @@ async def _dispatch(body, text, mode, engine):
         extra += ["--model", MODELS[body.model]]
     if body.effort in EFFORTS:
         extra += ["--effort", body.effort]
+    name = " ".join(body.name.split())[:80]
+    if name and not body.sid:
+        extra += ["--name", name]   # 寫進紀錄檔的 custom-title，手機與桌面都顯示這個名字
 
     # 桌面 app 正開著這個對話 → 直送進那個行程，不另起第二個行程搶同一份紀錄
     peer = live_peer_for(body.sid) if body.sid else None

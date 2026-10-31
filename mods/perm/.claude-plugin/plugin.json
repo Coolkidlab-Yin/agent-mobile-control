@@ -1,0 +1,1 @@
+{ "name": "agent-mobile-perm", "version": "0.1.0", "description": "手機聊天室的授權卡 mod：桌面對話的 Bash 授權與選擇題同時送到手機，誰先按算誰；取代 settings.json 的 perm-bridge.js（mod 出錯時引擎自動退回它）", "author": { "name": "coolkid" } }

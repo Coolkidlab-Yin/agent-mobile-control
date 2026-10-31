@@ -933,6 +933,10 @@ html, body { overscroll-behavior-x: none; }
 .quota-go .hc-cta { margin-top: 6px; }
 .hc-ack { padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: transparent; color: var(--dim); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .hc-ack:disabled { opacity: .5; }
+/* 待處理頂端「一次清完」與抽屜裡每張卡上方的來源列 */
+.inbox-bar { display: block; width: 100%; margin-bottom: 12px; padding: 13px 14px; border: none; border-radius: 16px; background: var(--todo-bg); color: var(--todo-fg); font-size: 15px; font-weight: 700; text-align: left; cursor: pointer; }
+.inbox-from { margin: 16px 2px 6px; font-size: 13px; color: var(--dim); cursor: pointer; }
+#inbox-body .ask-card { max-width: 100%; }
 .bottom-nav {
   position: absolute; left: 0; right: 0; bottom: 0; display: flex; z-index: 3;
   padding: 6px 0 calc(var(--safe-bottom) + 6px); background: var(--bar-bg); border-top: 1px solid var(--line);

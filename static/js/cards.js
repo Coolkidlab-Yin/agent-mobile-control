@@ -3,7 +3,7 @@
 "use strict";
 
 /* ---------- AskUserQuestion 選項卡 ---------- */
-function renderAskCard(it) {
+function renderAskCard(it, parent) {
   const card = buildAskCard(it.questions, "🙋 它想問你", (answers, freeText, skipped) => {
     api("/api/ask/" + it.ask_id + "/answer", {
       method: "POST",
@@ -13,7 +13,7 @@ function renderAskCard(it) {
     lockAskCard(it.ask_id, skipped ? "（已跳過）" : null);
   });
   card.dataset.askId = it.ask_id;
-  msgsEl.appendChild(card);
+  (parent || msgsEl).appendChild(card);
 }
 
 /* 選項卡本體：questions 依 AskUserQuestion 格式；submit(answers, freeText, skipped) */
@@ -85,8 +85,12 @@ function buildAskCard(questions, head, submit) {
 }
 
 function lockAskCard(askId, note) {
-  const card = msgsEl.querySelector('.ask-card[data-ask-id="' + askId + '"]');
-  if (!card || card.classList.contains("done")) return;
+  // 同一張卡可能同時在對話頁和「一次清完」抽屜裡，兩邊都鎖
+  document.querySelectorAll('.ask-card[data-ask-id="' + askId + '"]').forEach((card) => lockCard(card, note));
+}
+
+function lockCard(card, note) {
+  if (card.classList.contains("done")) return;
   card.classList.add("done");
   card.querySelectorAll("button, input").forEach((el) => { el.disabled = true; });
   if (note) {
@@ -107,11 +111,12 @@ function permNote(decision, by, tool) {
   const who = by === "desktop" ? "已在桌面按了：" : by === "timeout" ? "沒人按，改由桌面 App 自己問：" : "";
   if (decision === "allow") return who + "已允許";
   if (decision === "deny") return who + "已拒絕";
-  if (decision === "ask") return "太久沒人按，改由桌面 App 的確認框處理";
+  // 授權卡 mod 在桌面先按時只知道「桌面處理了」，不知道按了允許還是拒絕（mods/perm）
+  if (decision === "ask") return by === "desktop" ? "已在桌面處理了" : "太久沒人按，改由桌面 App 的確認框處理";
   return who || null;
 }
 
-function renderPermCard(it) {
+function renderPermCard(it, parent) {
   if (it.tool === "AskUserQuestion" && it.questions) {
     // 桌面正在跑的對話問選擇題：桌面 App 也跳了同一題，先答的算數；答案走授權通道回填
     const qc = buildAskCard(it.questions, "🙋 桌面的對話想問你（桌面也跳了同一題，先答的算數）", (answers, freeText, skipped) => {
@@ -123,7 +128,7 @@ function renderPermCard(it) {
     });
     qc.classList.add("perm-card");
     qc.dataset.permId = it.perm_id;
-    msgsEl.appendChild(qc);
+    (parent || msgsEl).appendChild(qc);
     return;
   }
   const card = document.createElement("div");
@@ -154,18 +159,9 @@ function renderPermCard(it) {
   card.querySelector(".perm-deny").onclick = () => submit("deny");
   const allBtn = card.querySelector(".perm-all");
   if (allBtn) allBtn.onclick = () => submit("allow_all");
-  msgsEl.appendChild(card);
+  (parent || msgsEl).appendChild(card);
 }
 
 function lockPermCard(permId, note) {
-  const card = msgsEl.querySelector('.perm-card[data-perm-id="' + permId + '"]');
-  if (!card || card.classList.contains("done")) return;
-  card.classList.add("done");
-  card.querySelectorAll("button, input").forEach((el) => { el.disabled = true; });
-  if (note) {
-    const n = document.createElement("div");
-    n.className = "ask-note";
-    n.textContent = note;
-    card.appendChild(n);
-  }
+  document.querySelectorAll('.perm-card[data-perm-id="' + permId + '"]').forEach((card) => lockCard(card, note));
 }

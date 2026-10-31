@@ -55,7 +55,44 @@ function renderHome() {
     return;
   }
   homeListEl.innerHTML = "";
+  // 待處理頂端：在等你的卡加總 ≥1 就給一條「一次清完」，不用一間一間點進去
+  const waiting = homeTab === "todo" ? shown.reduce((n, r) => n + (r.n_pending || 0), 0) : 0;
+  if (waiting) {
+    const bar = document.createElement("button");
+    bar.className = "inbox-bar";
+    bar.textContent = waiting + " 張卡在等你回答 · 一次清完 ›";
+    bar.onclick = openInbox;
+    homeListEl.appendChild(bar);
+  }
   for (const r of shown) homeListEl.appendChild(homeCard(r));
+}
+
+/* 一次清完：/api/pending 的卡（桌面授權、桌面選擇題、手機工作的授權與提問）依時間排好，就地作答；
+   卡片本體跟對話頁同一套（cards.js），答完一樣上鎖；工作台 25 秒才輪詢一次，所以在抽屜裡按了就順手刷新。 */
+async function openInbox() {
+  const mask = $("#sheet-inbox"), body = $("#inbox-body");
+  body.innerHTML = '<div class="empty-hint">載入中…</div>';
+  mask.classList.remove("hidden");
+  let d;
+  try { d = await api("/api/pending"); }
+  catch (e) { body.innerHTML = '<div class="empty-hint">拿不到：' + esc(e.message) + "</div>"; return; }
+  const bySid = {};
+  for (const r of rooms) bySid[r.sid] = r;
+  const items = d.items.filter((it) => !it.waiter_gone &&
+    (projFilter === "全部" || (bySid[it.sid] && bySid[it.sid].project_name === projFilter)));
+  $("#inbox-title").textContent = "等你回答（" + items.length + "）";
+  body.innerHTML = items.length ? "" : '<div class="empty-hint">現在沒有卡在等你</div>';
+  body.onclick = (e) => { if (e.target.closest("button")) setTimeout(() => loadRooms(true), 800); };
+  for (const it of items) {
+    const r = bySid[it.sid];
+    const head = document.createElement("div");
+    head.className = "inbox-from";
+    head.textContent = (r ? (r.project_name || "") + " · " + (r.title || "對話") : "某個對話") + " · " + ago(it.created);
+    if (r) head.onclick = () => { mask.classList.add("hidden"); openRoom(r); };
+    body.appendChild(head);
+    if (it.kind === "ask") renderAskCard(it, body);
+    else renderPermCard(it, body);
+  }
 }
 
 function homeCard(r) {

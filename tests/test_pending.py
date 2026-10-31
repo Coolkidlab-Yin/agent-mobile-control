@@ -104,3 +104,18 @@ def test_send_with_client_msg_id_runs_once_and_rejects_conflicts(client, monkeyp
     assert bad.status_code == 400
     ok = client.post("/api/send", json={"text": "x", "project": str(tmp_path), "engine": "claude", "client_msg_id": "m-2"})
     assert ok.status_code == 200 and len(started) == 2
+
+
+def test_send_new_room_with_name_passes_it_as_the_session_name(client, monkeypatch, tmp_path):
+    """一鍵交接開的新對話沿用舊名字：name 變成 claude 的 --name（寫進紀錄檔的 custom-title），換行收成空白。"""
+    got = []
+
+    async def fake_run_claude(run, text, mode, extra):
+        got.append(list(extra))
+        await _emit(run, {"kind": "done", "ok": True, "sid": run.sid})
+
+    monkeypatch.setattr(A, "run_claude", fake_run_claude)
+    client.post("/api/send", json={"text": "接手", "project": str(tmp_path), "engine": "claude", "name": "週報\n草稿"})
+    assert got[-1][-2:] == ["--name", "週報 草稿"]
+    client.post("/api/send", json={"text": "一般新對話", "project": str(tmp_path), "engine": "claude"})
+    assert "--name" not in got[-1]

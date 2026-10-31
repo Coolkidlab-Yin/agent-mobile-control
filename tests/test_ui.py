@@ -593,3 +593,96 @@ def test_send_discards_pending_dictation(page):
     page.wait_for_function("document.querySelectorAll('#messages .msg.user').length >= 1")
     assert page.evaluate("fakeRec.aborted && fakeRec.onresult === null && rec === null")
     assert page.locator("#input").input_value() == ""
+
+
+# ---------- 一次清完、一鍵交接 ----------
+
+def wait_answer(perm_id):
+    for _ in range(40):
+        if P.PERMS[perm_id]["answer"] is not None:
+            break
+        time.sleep(0.05)
+    return P.PERMS[perm_id]
+
+
+def test_inbox_lists_every_waiting_card_and_answers_in_place(page, server):
+    """待處理頂端「N 張卡在等你回答」→ 抽屜裡每張卡標明來自哪個對話，就地作答，伺服器收到的跟在對話頁按的一樣。"""
+    ask = httpx.post(server.url + "/api/perm", json={
+        "session_id": SID, "tool_name": "AskUserQuestion", "event": "PermissionRequest",
+        "tool_input": {"questions": [{"question": QUESTION, "options": [{"label": "推"}, {"label": "先不要"}]}]},
+    }, timeout=10).json()["perm_id"]
+    bash = httpx.post(server.url + "/api/perm", json={
+        "session_id": SID, "tool_name": "Bash", "event": "PermissionRequest",
+        "tool_input": {"command": "git push origin main"},
+    }, timeout=10).json()["perm_id"]
+    page.reload()
+    page.locator("#home-tabs button[data-v='todo']").click()
+    bar = page.locator(".inbox-bar")
+    expect(bar).to_have_text("2 張卡在等你回答 · 一次清完 ›")
+    bar.click()
+    sheet = page.locator("#sheet-inbox")
+    expect(sheet).not_to_have_class(re.compile(r"hidden"))
+    expect(page.locator("#inbox-title")).to_have_text("等你回答（2）")
+    expect(page.locator("#inbox-body .inbox-from")).to_have_count(2)
+    expect(page.locator("#inbox-body .inbox-from").first).to_contain_text("uiproj")
+    expect(page.locator("#screen-chat")).to_have_class(re.compile(r"hidden-right"))   # 沒進任何房間
+
+    qcard = page.locator("#inbox-body .perm-card[data-perm-id='%s']" % ask)
+    qcard.locator(".ask-opt").nth(1).click()
+    expect(qcard).to_have_class(re.compile(r"done"))
+    bcard = page.locator("#inbox-body .perm-card[data-perm-id='%s']" % bash)
+    expect(bcard.locator(".ask-question, .perm-preview").first).to_contain_text("git push")
+    bcard.locator(".perm-deny").click()
+    expect(bcard.locator(".ask-note")).to_have_text("已拒絕")
+    assert wait_answer(ask)["answers"] == {QUESTION: "先不要"}
+    p = wait_answer(bash)
+    assert p["answer"] == "deny" and p["by"] == "phone"
+    page.locator("#sheet-inbox .sheet-cancel").click()
+    expect(page.locator(".inbox-bar")).to_have_count(0)   # 答完刷新，條就收掉
+
+
+def test_inbox_bar_absent_when_nothing_waits(page):
+    page.locator("#home-tabs button[data-v='todo']").click()
+    expect(page.locator(".inbox-bar")).to_have_count(0)
+
+
+def test_relay_sends_handoff_prompt_then_resume_opens_new_room(page):
+    """一鍵交接：面板按鈕把交接指令送進這個對話；回覆最後一行有 HANDOFF_PATH 時長出「在新對話接手」，
+    按下去在同一個專案開新對話、帶交接檔路徑。送出攔下來不真的跑 claude。"""
+    sent = []
+
+    def fake_send(route):
+        sent.append(route.request.post_data_json)
+        route.fulfill(json={"run_id": "fake%d" % len(sent)})
+
+    page.route("**/api/send", fake_send)
+    page.route("**/api/run/fake*/events*", lambda route: route.fulfill(
+        status=200, headers={"Content-Type": "text/event-stream"}, body=""))
+    open_room(page)
+    old_title = page.locator("#chat-title").text_content()
+    page.locator("#btn-room").click()
+    page.locator("#btn-relay").click()
+    expect(page.locator("#sheet-room")).to_have_class(re.compile(r"hidden"))
+    page.wait_for_function("document.querySelectorAll('#messages .msg.user').length >= 1")
+    assert len(sent) == 1
+    assert sent[0]["sid"] == SID and sent[0]["text"].startswith("【手機一鍵交接】")
+    assert "HANDOFF_PATH:" in sent[0]["text"]
+
+    # 交接寫好的回覆：路徑包在反引號裡也要認得
+    reply = "交接檔寫好了。\\nHANDOFF_PATH: `C:/work/uiproj/handoff.md`"
+    page.evaluate("msgsEl.appendChild(renderItem({role: 'ai', text: '%s'}))" % reply)
+    go = page.locator("#messages .relay-go")
+    expect(go).to_have_count(1)
+    go.click()
+    expect(page.locator("#chat-title")).to_have_text(old_title)   # 交接後名字不變
+    page.wait_for_function("document.querySelectorAll('#messages .msg.user').length >= 1")
+    assert len(sent) == 2
+    body = sent[1]
+    assert "sid" not in body and body["project"] == "C:\\work\\uiproj" and body["name"] == old_title
+    assert "讀 C:/work/uiproj/handoff.md 接手" in body["text"]
+
+
+def test_relay_button_absent_on_normal_replies(page):
+    open_room(page)
+    expect(page.locator("#messages .relay-go")).to_have_count(0)
+    expect(page.locator("#messages .quota-go")).to_have_count(0)
