@@ -386,7 +386,8 @@ def test_auth_warning_banner(tmp_path, monkeypatch):
     assert RN.auth_warning() == ""
     old = RN.time.time() - 350 * 86400
     RN.os.utime(tok, (old, old))
-    assert "約 14 天後到期" in RN.auth_warning() or "約 15 天後到期" in RN.auth_warning()
+    w = RN.auth_warning()   # 只叫一次：剩 15.0 天上下，兩次之間跨過整數就一次 15、一次 14，or 兩邊都落空
+    assert "約 14 天後到期" in w or "約 15 天後到期" in w, w
     old = RN.time.time() - 400 * 86400
     RN.os.utime(tok, (old, old))
     assert "已經過了到期日" in RN.auth_warning()
