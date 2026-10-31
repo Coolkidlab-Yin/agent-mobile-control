@@ -94,16 +94,16 @@ function fileEmbed(match, ext) {
   const e = ext.toLowerCase();
   if (["mp4", "mov", "webm", "m4v"].includes(e)) {
     return '<video controls playsinline preload="metadata" src="' + url + '"></video>' +
-      '<a class="file-link" href="' + url + '" target="_blank">🎬 ' + esc(base) + "</a>";
+      '<a class="file-link" href="' + url + '" target="_blank">' + icon("film") + ' ' + esc(base) + "</a>";
   }
   if (["png", "jpg", "jpeg", "gif", "webp"].includes(e)) {
     return '<a href="' + url + '" target="_blank"><img src="' + url + '" loading="lazy"></a>';
   }
   if (["mp3", "wav", "m4a"].includes(e)) {
     return '<audio controls preload="none" src="' + url + '"></audio>' +
-      '<a class="file-link" href="' + url + '" target="_blank">🎵 ' + esc(base) + "</a>";
+      '<a class="file-link" href="' + url + '" target="_blank">' + icon("music") + ' ' + esc(base) + "</a>";
   }
-  return '<a class="file-link" href="' + url + '" target="_blank">📎 ' + esc(base) + "</a>";
+  return '<a class="file-link" href="' + url + '" target="_blank">' + icon("clip") + ' ' + esc(base) + "</a>";
 }
 
 function linkifyFiles(html) {
@@ -148,4 +148,62 @@ function fmtReset(iso) {
   const wd = "日一二三四五六"[d.getDay()];
   const pad = (n) => String(n).padStart(2, "0");
   return "週" + wd + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + " 重置";
+}
+
+/* ---------- 圖示 ----------
+   介面不用 emoji（各平台長得不一樣、彩色跟配色打架）：一套細線圖示，筆畫跟著文字顏色走，深色模式自動適用。
+   路徑取自 Lucide（ISC 授權），24×24、圓角筆畫。HTML 裡寫 data-icon="名字" 的元素，載入時自動補上圖示。 */
+const ICONS = {
+  home: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  relay: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  lock: '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  doc: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8M16 17H8M10 9H8"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  film: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M17 3v18M3 7.5h4M3 12h18M3 16.5h4M17 7.5h4M17 16.5h4"/>',
+  music: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
+  terminal: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  flow: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
+};
+function icon(name) {
+  return '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
+}
+document.querySelectorAll("[data-icon]").forEach((el) => el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon)));
+
+/* 桌面 app 的子對話（手動分出的 fork／旁開的子任務）：排在父對話正下方，回 [[room, 深度], ...]。
+   父對話不在這份清單（別的分頁、被封存）就照原位置、深度 0，卡片上改寫「從哪個對話分出」。 */
+function nestForks(list) {
+  const inList = new Set(list.map((r) => r.sid));
+  const kids = {};
+  for (const r of list) {
+    if (r.parent_sid && r.parent_sid !== r.sid && inList.has(r.parent_sid)) (kids[r.parent_sid] = kids[r.parent_sid] || []).push(r);
+  }
+  const out = [], seen = new Set();
+  const add = (r, depth) => {
+    if (seen.has(r.sid)) return;
+    seen.add(r.sid);
+    out.push([r, depth]);
+    for (const k of kids[r.sid] || []) add(k, depth + 1);
+  };
+  for (const r of list) if (!(r.parent_sid && inList.has(r.parent_sid))) add(r, 0);
+  for (const r of list) add(r, 1);   // 互相指來指去的怪資料也不會漏掉
+  return out;
+}
+
+function forkTag(r, depth) {
+  const kind = r.child_kind === "fork" ? "分支" : r.child_kind === "side" ? "子任務" : "";
+  if (!kind) return "";
+  const from = !depth && r.parent_title ? "：從「" + r.parent_title.slice(0, 16) + "」" : "";
+  return '<span class="tag fork">' + esc(kind + from) + "</span>";
 }

@@ -11,6 +11,14 @@ if str(ROOT) not in sys.path:
 
 
 @pytest.fixture(autouse=True)
+def _tmp_desktop_gens(tmp_path_factory, monkeypatch):
+    # 讀登錄檔會順手記「紀錄檔 → 桌面對話」對照：測試不能寫進正式的 desktop-gens.json
+    from claude_chat import desktop
+    monkeypatch.setattr(desktop, "GENS_FILE", tmp_path_factory.mktemp("gens") / "desktop-gens.json")
+    monkeypatch.setattr(desktop, "_gens", {"data": None})
+
+
+@pytest.fixture(autouse=True)
 def _tmp_store(tmp_path_factory):
     # 放在獨立目錄，不放 tmp_path：有些測試會列舉自己的 tmp_path，不該看到資料庫檔
     from claude_chat import store

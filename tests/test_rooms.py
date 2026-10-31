@@ -70,3 +70,67 @@ def test_find_room_file_rejects_traversal_and_missing(sandbox):
     assert e.value.status_code == 404
     mk_room(sandbox, "ok", SID_A, "cli")
     assert R.find_room_file("ok", SID_A).name == SID_A + ".jsonl"
+
+
+def test_scan_rooms_links_desktop_child_sessions_to_their_parent(sandbox, monkeypatch):
+    mk_room(sandbox, "C--work-p1", SID_A, "claude-desktop", "父")
+    mk_room(sandbox, "C--work-p1", SID_B, "claude-desktop", "子")
+    reg = {SID_A: {"local_id": "local_a", "title": "父對話", "archived": False, "cwd": "C:/work/C--work-p1",
+                   "last": 0, "parent": "", "kind": ""},
+           SID_B: {"local_id": "local_b", "title": "父對話 (fork)", "archived": False, "cwd": "C:/work/C--work-p1",
+                   "last": 0, "parent": "local_a", "kind": "fork"}}
+    monkeypatch.setattr(R, "desktop_registry", lambda: reg)
+    rooms = {r["sid"]: r for r in R.scan_rooms()}
+    assert (rooms[SID_B]["parent_sid"], rooms[SID_B]["parent_title"], rooms[SID_B]["child_kind"]) == (SID_A, "父對話", "fork")
+    assert "parent_sid" not in rooms[SID_A] and rooms[SID_A]["child_kind"] == "" and "_local" not in rooms[SID_A]
+    reg[SID_A] = dict(reg[SID_A], archived=True)   # 父對話封存了：子對話還在，只留父對話標題
+    R._room_cache.clear()
+    rooms = {r["sid"]: r for r in R.scan_rooms()}
+    assert SID_A not in rooms and (rooms[SID_B]["parent_sid"], rooms[SID_B]["parent_title"]) == ("", "父對話")
+
+
+def mk_named(proj, slug, sid, name):
+    recs = [{"type": "custom-title", "customTitle": name, "sessionId": sid},
+            {"type": "user", "cwd": "C:/work/" + slug, "entrypoint": "claude-desktop",
+             "message": {"role": "user", "content": "開場"}, "timestamp": "2026-10-04T01:00:00Z"}]
+    recs += [assistant("回覆 %d，多放幾個字讓檔案超過兩百位元組的門檻" % i) for i in range(3)]
+    return write_jsonl(proj / slug / (sid + ".jsonl"), recs)
+
+
+def test_desktop_rename_wins_over_the_name_at_the_top_of_the_file(sandbox, monkeypatch):
+    mk_named(sandbox, "C--work-p1", SID_A, "開對話時的名字")
+    reg = {SID_A: {"local_id": "local_a", "title": "桌面自動取的名字", "archived": False, "cwd": "C:/work/C--work-p1",
+                   "last": 0, "renamed": False}}
+    monkeypatch.setattr(R, "desktop_registry", lambda: reg)
+    assert R.scan_rooms()[0]["title"] == "開對話時的名字"   # 沒改過名：紀錄檔裡的名字（手機開的、--name 帶的）優先
+    reg[SID_A] = dict(reg[SID_A], title="使用者改的名字", renamed=True)
+    R._room_cache.clear()
+    assert R.scan_rooms()[0]["title"] == "使用者改的名字"
+
+
+def test_older_segment_left_by_desktop_clear_folds_into_the_same_room(sandbox, monkeypatch):
+    """桌面對話 /clear 後登錄檔只指新紀錄檔；舊那段靠記下來的對照併回同一間，不再頂著交接指令當名字。"""
+    mk_room(sandbox, "C--work-p1", SID_A, "claude-desktop", "交接後這段")
+    mk_room(sandbox, "C--work-p1", SID_B, "claude-desktop", "【自動交接】上一段對話")
+    R.remember_app_sid(SID_B)   # 手機碰過的舊段落才會被列出來
+    reg = {SID_A: {"local_id": "local_a", "title": "週報草稿", "archived": False, "cwd": "C:/work/C--work-p1",
+                   "last": 0, "renamed": True}}
+    monkeypatch.setattr(R, "desktop_registry", lambda: reg)
+    monkeypatch.setattr(R, "desktop_gens", lambda: {})
+    assert len(R.scan_rooms()) == 2
+    monkeypatch.setattr(R, "desktop_gens", lambda: {SID_A: "local_a", SID_B: "local_a"})
+    R._room_cache.clear()
+    rooms = R.scan_rooms()
+    assert [r["title"] for r in rooms] == ["週報草稿"] and set(rooms[0]["gen_sids"]) == {SID_A, SID_B}
+
+
+def test_phone_rename_holds_until_the_desktop_renames_again(sandbox, monkeypatch):
+    mk_room(sandbox, "C--work-p1", SID_A, "claude-desktop", "開場")
+    reg = {SID_A: {"local_id": "local_a", "title": "桌面的名字", "archived": False, "cwd": "C:/work/C--work-p1",
+                   "last": 0, "renamed": True}}
+    monkeypatch.setattr(R, "desktop_registry", lambda: reg)
+    R.save_title(SID_A, "手機改的", "桌面的名字")
+    assert R.scan_rooms()[0]["title"] == "手機改的"
+    reg[SID_A] = dict(reg[SID_A], title="桌面後來又改")   # 最後改的贏
+    R._room_cache.clear()
+    assert R.scan_rooms()[0]["title"] == "桌面後來又改"

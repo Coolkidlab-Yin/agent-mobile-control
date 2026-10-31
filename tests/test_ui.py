@@ -686,3 +686,29 @@ def test_relay_button_absent_on_normal_replies(page):
     open_room(page)
     expect(page.locator("#messages .relay-go")).to_have_count(0)
     expect(page.locator("#messages .quota-go")).to_have_count(0)
+
+
+def test_desktop_child_sessions_sit_under_their_parent_in_both_lists(page, monkeypatch):
+    """桌面 app 分出的子對話排在父對話正下方、縮排、標「分支／子任務」；父對話不在清單就照時間排、標從哪分出。
+    scan_rooms 換成假的五間房，不碰真的對話紀錄。"""
+    from claude_chat import api as A
+    now = time.time()
+    base = dict(slug="C--work-ui", project_name="uiproj", preview="", running=True, busy=False, live=False,
+                engine="claude", app=False, desktop=True, archived=False, child_kind="")
+    fake = [dict(base, sid="s-new", title="最新的", last_epoch=now),
+            dict(base, sid="s-kid", title="父 (fork)", last_epoch=now - 10, parent_sid="s-par", parent_title="父",
+                 child_kind="fork"),
+            dict(base, sid="s-mid", title="中間的", last_epoch=now - 20),
+            dict(base, sid="s-par", title="父", last_epoch=now - 30),
+            dict(base, sid="s-orphan", title="孤兒", last_epoch=now - 40, parent_sid="", parent_title="封存的父",
+                 child_kind="side")]
+    monkeypatch.setattr(A, "scan_rooms", lambda show_all=False: [dict(r) for r in fake])
+    page.reload()
+    page.locator("#home-tabs button[data-v='running']").click()
+    expect(page.locator(".hcard .hc-title")).to_have_text(["最新的", "中間的", "父", "父 (fork)", "孤兒"])
+    expect(page.locator(".hcard.child .hc-title")).to_have_text(["父 (fork)"])
+    expect(page.locator(".hcard.child .tag.fork")).to_have_text("分支")
+    expect(page.locator(".hcard", has_text="孤兒").locator(".tag.fork")).to_have_text("子任務：從「封存的父」")
+    page.locator("#bottom-nav [data-tab='all']").click()
+    expect(page.locator(".room-title")).to_have_text(["最新的", "中間的", "父", "父 (fork)", "孤兒"])
+    expect(page.locator(".room-wrap.child .room-title")).to_have_text(["父 (fork)"])

@@ -307,6 +307,10 @@ body {
 }
 .key-btns .key-clear { background: none; color: var(--bad); border-color: var(--bad); font-weight: 400; }
 .tag.arch { background: var(--arch-bg); color: var(--arch-text); }
+/* 桌面 app 分出的子對話：縮排排在父對話底下 */
+.tag.fork { background: transparent; color: var(--dim); border: 1px solid var(--line); }
+.hcard.child { margin-left: 22px; }
+.room-wrap.child .room { padding-left: 34px; }
 .empty-hint { text-align: center; color: var(--dim); padding: 48px 20px; font-size: 14px; }
 /* 已完成分頁在「全部專案」時的專案按鈕 */
 .empty-hint.pick-hint { padding-bottom: 14px; }
@@ -939,17 +943,22 @@ html, body { overscroll-behavior-x: none; }
 #inbox-body .ask-card { max-width: 100%; }
 .bottom-nav {
   position: absolute; left: 0; right: 0; bottom: 0; display: flex; z-index: 3;
-  padding: 6px 0 calc(var(--safe-bottom) + 6px); background: var(--bar-bg); border-top: 1px solid var(--line);
+  padding: 5px 0 calc(var(--safe-bottom) + 4px); background: var(--bar-bg); border-top: 1px solid var(--line);
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
 }
-.bottom-nav button { flex: 1; border: none; background: transparent; color: var(--dim); font-size: 10.5px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 0; cursor: pointer; }
-.bottom-nav button b { font-size: 20px; line-height: 1; font-weight: 400; }
+/* 字比圖示重要：字放大到 13px、圖示縮到 21px，列高跟著變矮 */
+.bottom-nav button { flex: 1; border: none; background: transparent; color: var(--dim); font-size: 13px; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 2px 0; cursor: pointer; }
+.bottom-nav button b { line-height: 0; }
+.bottom-nav button .ic { width: 21px; height: 21px; }
 .bottom-nav button.on { color: var(--cta); }
+/* 新對話：右下角小圓鈕（原本置中的「＋ 新對話」長條會蓋住卡片按鈕） */
 .screen .fab {
-  left: 50%; right: auto; transform: translateX(-50%); bottom: calc(var(--safe-bottom) + 68px);
-  width: auto; height: 48px; padding: 0 24px; border-radius: 24px; font-size: 16px; font-weight: 700;
+  right: 16px; bottom: calc(var(--safe-bottom) + 76px);
+  width: 48px; height: 48px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center;
 }
-.screen .fab:active { transform: translateX(-50%) scale(.96); }
+.screen .fab .ic { width: 24px; height: 24px; stroke-width: 2.2; }
+.screen .fab:active { transform: scale(.94); }
 .room-list { padding-bottom: calc(var(--safe-bottom) + 150px); }
 
 /* 專案下拉（標題列右側；取代原本那排 chips） */
@@ -960,3 +969,13 @@ html, body { overscroll-behavior-x: none; }
   color: var(--text); border: 1px solid var(--line); outline: none; box-shadow: var(--card-shadow);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* ---------- 線條圖示（util.js 的 icon()） ---------- */
+.ic { width: 1.15em; height: 1.15em; vertical-align: -0.2em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.action-btn { display: flex; align-items: center; gap: 12px; }
+.action-btn .ic { width: 20px; height: 20px; color: var(--dim); }
+.action-btn.danger .ic { color: inherit; }
+.attach-btn.mic .ic { width: 20px; height: 20px; }
+.ask-head .ic, .perm-banner .ic, .bg-chip .ic, .bg-head .ic { margin-right: 4px; }
+.tag .ic { width: 1.1em; height: 1.1em; margin-right: 2px; }
+.attach-item .doc .ic { width: 22px; height: 22px; }

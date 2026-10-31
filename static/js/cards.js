@@ -4,7 +4,7 @@
 
 /* ---------- AskUserQuestion 選項卡 ---------- */
 function renderAskCard(it, parent) {
-  const card = buildAskCard(it.questions, "🙋 它想問你", (answers, freeText, skipped) => {
+  const card = buildAskCard(it.questions, icon("help") + "它想問你", (answers, freeText, skipped) => {
     api("/api/ask/" + it.ask_id + "/answer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -119,7 +119,7 @@ function permNote(decision, by, tool) {
 function renderPermCard(it, parent) {
   if (it.tool === "AskUserQuestion" && it.questions) {
     // 桌面正在跑的對話問選擇題：桌面 App 也跳了同一題，先答的算數；答案走授權通道回填
-    const qc = buildAskCard(it.questions, "🙋 桌面的對話想問你（桌面也跳了同一題，先答的算數）", (answers, freeText, skipped) => {
+    const qc = buildAskCard(it.questions, icon("help") + "桌面的對話想問你（桌面也跳了同一題，先答的算數）", (answers, freeText, skipped) => {
       api("/api/perm/" + it.perm_id + "/answer", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision: skipped ? "deny" : "allow", answers: answers || {}, free_text: freeText || "" }),
@@ -135,8 +135,8 @@ function renderPermCard(it, parent) {
   card.className = "msg ai ask-card perm-card";
   card.dataset.permId = it.perm_id;
   const head = it.reason
-    ? (it.source === "desktop" ? "⚠️ 桌面正在跑的對話碰到危險指令，要放行嗎？（桌面也跳了同一個框，先按的算數）" : "⚠️ 危險指令，要放行嗎？")
-    : "🔐 它想做這件事，可以嗎？";
+    ? icon("alert") + (it.source === "desktop" ? "桌面正在跑的對話碰到危險指令，要放行嗎？（桌面也跳了同一個框，先按的算數）" : "危險指令，要放行嗎？")
+    : icon("lock") + "它想做這件事，可以嗎？";
   card.innerHTML =
     '<div class="ask-head">' + head + "</div>" +
     (it.reason ? '<div class="perm-reason">' + esc(it.reason) + "</div>" : "") +

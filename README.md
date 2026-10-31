@@ -120,7 +120,7 @@ Tap "+" next to the composer to attach a photo (camera or library) or a document
 **Rename & full-text search:**
 
 - Long-press a room → **Rename**. Stored in `web-titles.json` (gitignored); clear the name to fall back to the original title.
-- Type two or more characters in the search box and, besides matching titles, the server searches the *content* of every visible conversation (`GET /api/search?q=`, last 1.5 MB of each transcript). Matching rooms show the hit as their preview line, prefixed with 🔎.
+- Type two or more characters in the search box and, besides matching titles, the server searches the *content* of every visible conversation (`GET /api/search?q=`, last 1.5 MB of each transcript). Matching rooms show the hit as their preview line, prefixed with 「找到：」 ("found:").
 
 **Appearance & per-room settings:**
 
@@ -143,6 +143,10 @@ Tap "+" next to the composer to attach a photo (camera or library) or a document
 If the Claude desktop app is installed on the server machine, the room list lines up with it in both directions. None of this is documented by Anthropic — it was worked out from the app bundle (version 1.40609.1) and verified by hand, so a future desktop release may break it; everything degrades to "no desktop app" behaviour when it does.
 
 **Desktop → phone (automatic, live).** The desktop app keeps one JSON file per session under `%APPDATA%\Claude\claude-code-sessions\<account>\<org>\local_<id>.json`; its `cliSessionId` is the `.jsonl` file name in `~/.claude/projects`. The server reads those files (5-second cache) for titles, archive state and project paths, so archiving or renaming a session on the desktop shows up on the phone a few seconds later. The IndexedDB copy is never touched.
+
+- **Names.** The `custom-title` at the top of a transcript is the name the session was *opened* with; a rename on the desktop is only appended further down, so the server follows the registry file instead whenever it says `titleSource: "user"` (you renamed it there). Renaming a room on the phone can't be written back to the desktop (a running app neither reads an externally edited registry file nor keeps the edit), so the phone name is stored in `web-titles.json` together with the desktop name at that moment, and the last rename wins: if the desktop name later changes, the room switches back to it.
+- **Forks and side sessions.** Desktop sessions forked from another one (`forkedFromSessionId`, or `spawnedFrom` with `userFork`) or spawned as a side task (`spawnedFrom`) are listed directly under their parent on both the workbench and the Activity list, indented and tagged *branch* / *sub-task*. If the parent isn't in the list (archived, or on another tab) the child keeps its own place and the tag names the parent instead.
+- **`/clear` in a desktop session** starts a new transcript, and the registry file then points only at the new one. The server remembers every transcript → desktop-session pair it has seen in `desktop-gens.json` (gitignored), so the segment before the `/clear` is folded into the same room under the same name instead of turning up as a separate room titled with its first message.
 
 **Phone → desktop (`claude://` deep link).** Sessions started from the phone don't exist in the desktop app's list. The desktop app registers the `claude://` URL scheme, and `claude://resume?session=<cli-session-id>` imports an on-disk transcript into its list — same file, nothing copied, and both sides keep appending to it afterwards. (This is what the CLI's `/desktop` command uses too.)
 
@@ -364,3 +368,5 @@ When a Claude Code run stops because the plan's limit is reached (`You've hit yo
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+The line icons in `static/js/util.js` are SVG paths from [Lucide](https://lucide.dev) (ISC; some icons derived from Feather, MIT). Their license is reproduced in [LICENSE-lucide.txt](LICENSE-lucide.txt).

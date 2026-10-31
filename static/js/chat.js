@@ -211,7 +211,7 @@ function renderItem(it) {
   if (it.kind === "info") {
     const el = document.createElement("div");
     el.className = "info-chip";
-    el.innerHTML = "📋 " + esc(it.label || "摘要") +
+    el.innerHTML = icon("doc") + " " + esc(it.label || "摘要") +
       '（點開看）<div class="full">' + esc(it.text) + "</div>";
     el.onclick = () => el.classList.toggle("expand");
     return el;
@@ -222,7 +222,7 @@ function renderItem(it) {
     const state = it.ok === true ? '<span class="t-state ok">✓</span>'
       : it.ok === false ? '<span class="t-state bad">✕</span>'
       : '<span class="t-state"><span class="spin"></span></span>';
-    el.innerHTML = '<span class="t-name">⚙ ' + esc(it.tool) + "</span>" +
+    el.innerHTML = '<span class="t-name">' + icon("wrench") + " " + esc(it.tool) + "</span>" +
       (it.detail ? '<span class="t-detail">' + esc(it.detail) + "</span>" : "") + state;
     el.onclick = () => el.classList.toggle("expand");
     if (it.tool_use_id) toolChips[it.tool_use_id] = el;
@@ -291,7 +291,8 @@ async function codexTakeover(reset) {
   }
   stopWatch();
   detachRun(false);
-  openRoom({ slug: null, sid: null, engine: "codex", title: from.title || "對話",
+  // 名字沿用（交接後換名字會搞不清楚）；清單上靠引擎圖示分得出是 Codex 那間
+  openRoom({ slug: null, sid: null, engine: "codex", title: from.title || "對話", name: from.title || "",
              project: from.project, project_name: from.project_name });
   inputEl.value = CODEX_TAKEOVER(from.title || "對話", reset, data.file, picked.join("\n\n"));
   sendMsg();
@@ -368,7 +369,7 @@ function renderAttachStrip() {
     const el = document.createElement("div");
     el.className = "attach-item" + (a.uploading ? " uploading" : "");
     el.innerHTML = (isImagePath(a.name) ? '<img src="' + a.url + '">'
-      : '<div class="doc">📄<span>' + esc((a.name || "").split(".").pop().toUpperCase()) + "</span></div>") +
+      : '<div class="doc">' + icon("doc") + '<span>' + esc((a.name || "").split(".").pop().toUpperCase()) + "</span></div>") +
       '<div class="rm">✕</div>';
     el.querySelector(".rm").onclick = () => { attachments.splice(i, 1); renderAttachStrip(); };
     strip.appendChild(el);
@@ -654,7 +655,7 @@ function stopRec(discard) {
 $("#btn-mic").onclick = () => {
   if (rec) { stopRec(); return; }
   if (!SR) {
-    sysNote("這個瀏覽器不支援語音辨識——可以改用鍵盤上的 🎤 聽寫鍵");
+    sysNote("這個瀏覽器不支援語音辨識——可以改用鍵盤上的麥克風聽寫鍵");
     return;
   }
   rec = new SR();
@@ -674,7 +675,7 @@ $("#btn-mic").onclick = () => {
   rec.onend = () => { rec = null; $("#btn-mic").classList.remove("rec"); };
   rec.onerror = (e) => {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-      sysNote("麥克風權限被擋了——也可以用鍵盤上的 🎤 聽寫鍵", true);
+      sysNote("麥克風權限被擋了——也可以用鍵盤上的麥克風聽寫鍵", true);
     }
     stopRec();
   };

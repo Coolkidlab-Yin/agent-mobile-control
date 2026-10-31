@@ -64,7 +64,7 @@ function renderHome() {
     bar.onclick = openInbox;
     homeListEl.appendChild(bar);
   }
-  for (const r of shown) homeListEl.appendChild(homeCard(r));
+  for (const [r, depth] of nestForks(shown)) homeListEl.appendChild(homeCard(r, depth));
 }
 
 /* 一次清完：/api/pending 的卡（桌面授權、桌面選擇題、手機工作的授權與提問）依時間排好，就地作答；
@@ -95,14 +95,15 @@ async function openInbox() {
   }
 }
 
-function homeCard(r) {
+function homeCard(r, depth) {
   const el = document.createElement("div");
-  el.className = "hcard" + (r.badge_kind && r.badge_kind !== "none" ? " k-" + r.badge_kind : "");
+  el.className = "hcard" + (r.badge_kind && r.badge_kind !== "none" ? " k-" + r.badge_kind : "") + (depth ? " child" : "");
   el.dataset.sid = r.sid;
   const eng = r.engine || "claude";
   const initial = (r.project_name || "?").slice(0, 1).toUpperCase();
   const body = r.note || r.preview || "";
   const tags =
+    forkTag(r, depth) +
     (r.live ? '<span class="tag live">桌機開著</span>' : "") +
     (eng !== "claude" ? '<span class="tag eng">' + esc(ENGINE_NAME[eng] || eng) + "</span>" : "") +
     (eng === "claude" && r.app && !r.desktop ? '<span class="tag phone">只在手機</span>' : "") +
@@ -146,7 +147,7 @@ const FRESH = { stale: "，之後又改過", current: "，之後沒再改", unve
 
 function changesLine(c) {
   let s = "";
-  if (c.n_files) s += "✎ " + c.n_files + " 個檔";
+  if (c.n_files) s += icon("pencil") + " " + c.n_files + " 個檔";
   if (c.test) s += (s ? " · " : "") + (c.test.ok ? "✓ " : "✗ ") + esc(c.test.verdict) + (FRESH[c.test.freshness] || "");
   return s;
 }

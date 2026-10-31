@@ -669,10 +669,10 @@ class TitleBody(BaseModel):
 
 @app.post("/api/room/{slug}/{sid}/title")
 def room_title(slug: str, sid: str, body: TitleBody):
-    """改聊天室名字（存在 web-titles.json，空字串 = 還原）。"""
+    """改聊天室名字（存在 web-titles.json，空字串 = 還原）。寫不回桌面 app；之後桌面再改名就換回桌面的名字。"""
     find_room_file(slug, sid)
     t = _clean_title(body.title)
-    save_title(sid, t)
+    save_title(sid, t, (desktop_registry().get(sid) or {}).get("title", ""))
     return {"ok": True, "title": t}
 
 

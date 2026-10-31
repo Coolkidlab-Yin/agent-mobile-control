@@ -17,7 +17,7 @@ function renderPermBanner() {
   const p = pendingPerms[0];
   const room = rooms.find((r) => (r.gen_sids || [r.sid]).includes(p.sid));
   const isAsk = p.tool === "AskUserQuestion";
-  bar.innerHTML = (isAsk ? "🙋 " : "⚠️ ") + (pendingPerms.length > 1 ? pendingPerms.length + " 個對話" : "「" + esc(room ? room.title : "某個對話") + "」") +
+  bar.innerHTML = (isAsk ? icon("help") : icon("alert")) + (pendingPerms.length > 1 ? pendingPerms.length + " 個對話" : "「" + esc(room ? room.title : "某個對話") + "」") +
     (isAsk ? "在等你回答問題" : "在等你授權危險指令") + " <span>點這裡去按</span>";
   bar.onclick = () => { if (room) openRoom(room); };
 }
@@ -111,7 +111,7 @@ function renderRooms() {
       const h = hits[r.sid];
       if (!h || !h.hits.length) return r;
       const first = h.hits[0];
-      return Object.assign({}, r, { preview: "🔎 " + (first.role === "user" ? "你：" : "") + first.snippet });
+      return Object.assign({}, r, { preview: "找到：" + (first.role === "user" ? "你：" : "") + first.snippet });
     });
   }
   if (!shown.length) {
@@ -119,7 +119,7 @@ function renderRooms() {
     return;
   }
   listEl.innerHTML = "";
-  for (const r of shown) {
+  for (const [r, depth] of nestForks(shown)) {
     const el = document.createElement("div");
     el.className = "room";
     const h = hueFor(r.project_name);
@@ -137,15 +137,16 @@ function renderRooms() {
           '<div class="room-preview">' + esc(r.running ? "正在工作中…" : r.busy ? "桌面工作中… " + (r.preview || "") : r.preview || "") + "</div>" +
           (eng !== "claude" ? '<span class="tag eng">' + esc(ENGINE_NAME[eng] || eng) + "</span>" : "") +
           '<span class="tag">' + esc(r.project_name) + "</span>" +
+          forkTag(r, depth) +
           (r.archived ? '<span class="tag arch">封存</span>' : "") +
           (r.live ? '<span class="tag live">桌機開著</span>' : "") +
           (eng === "claude" && r.app && !r.desktop ? '<span class="tag phone">只在手機</span>' : "") +
-          (r.perm ? '<span class="tag perm">⚠ 等你授權</span>' : "") +
-          (r.ask ? '<span class="tag perm">🙋 等你回答</span>' : "") +
+          (r.perm ? '<span class="tag perm">' + icon("lock") + "等你授權</span>" : "") +
+          (r.ask ? '<span class="tag perm">' + icon("help") + "等你回答</span>" : "") +
         "</div>" +
       "</div>";
     const wrap = document.createElement("div");
-    wrap.className = "room-wrap";
+    wrap.className = "room-wrap" + (depth ? " child" : "");
     const acts = document.createElement("div");
     acts.className = "room-actions";
     acts.innerHTML =
@@ -249,10 +250,10 @@ function attachRoomHandlers(el, r) {
 function openActions(r) {
   actionRoom = r;
   $("#action-title").textContent = r.title;
-  $("#btn-archive").textContent = r.archived ? "📤 解除封存" : "📥 封存（從清單收起來，紀錄還在）";
+  $("#btn-archive span").textContent = r.archived ? "解除封存" : "封存（從清單收起來，紀錄還在）";
   const isClaude = (r.engine || "claude") === "claude";
   $("#btn-desktop").classList.toggle("hidden", !isClaude || !serverInfo.desktop_app || serverInfo.desktop_sync === "off");
-  $("#btn-desktop").textContent = r.desktop ? "🖥 在桌面 App 打開" : "🖥 同步到桌面 App 並打開";
+  $("#btn-desktop span").textContent = r.desktop ? "在桌面 App 打開" : "同步到桌面 App 並打開";
   $("#sheet-actions").classList.remove("hidden");
 }
 
@@ -273,7 +274,7 @@ $("#btn-desktop").onclick = async () => {
 $("#btn-rename").onclick = async () => {
   const r = actionRoom;
   if (!r) return;
-  const t = prompt("聊天室名字（清空 = 還原成原本的）", r.title || "");
+  const t = prompt("聊天室名字（只改手機，桌面 App 不會跟著改；之後在桌面改名會換回桌面的名字。清空 = 還原）", r.title || "");
   if (t === null) return;
   $("#sheet-actions").classList.add("hidden");
   try {

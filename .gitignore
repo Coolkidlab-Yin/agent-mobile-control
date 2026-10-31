@@ -48,6 +48,8 @@ perm-settings.json
 
 # Room titles renamed from the phone (runtime state)
 web-titles.json
+# Transcript -> desktop session map, remembered across /clear (runtime state)
+desktop-gens.json
 
 # Atomic-write leftovers (config.json is written to a .tmp then renamed)
 *.json.tmp

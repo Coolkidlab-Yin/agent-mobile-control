@@ -25,7 +25,7 @@ from .config import (
     WEB_ARCHIVE,
     log,
 )
-from .desktop import desktop_registry
+from .desktop import desktop_gens, desktop_registry
 from .jsonl import _clean_title, _head_info, _iso_epoch, _loads, _norm_cwd, _project_name, _slug_encode, _tail_info
 from .perm import pending_perms
 from .procs import _pid_alive
@@ -111,10 +111,12 @@ def load_titles():
     return _titles_cache["data"]
 
 
-def save_title(sid, title):
+def save_title(sid, title, desk=""):
+    """手機改名。desk＝改名當下桌面 app 顯示的名字：之後桌面的名字變了，代表本人又在桌面改過，最後改的贏。
+    （手機改名寫不回桌面：實測從外部改桌面 app 的登錄檔，app 開著時讀不到、之後存檔還會蓋回去）"""
     d = dict(load_titles())
     if title:
-        d[sid] = title
+        d[sid] = {"title": title, "desk": desk}
     else:
         d.pop(sid, None)
     tmp = TITLES_FILE.with_suffix(".json.tmp")
@@ -156,7 +158,9 @@ def load_snapshot():
     if reg:
         return {"generated_at": time.time(), "live": True,
                 "sessions": {sid: {"title": r["title"], "archived": r["archived"],
-                                   "cwd": r["cwd"], "last": r["last"]}
+                                   "cwd": r["cwd"], "last": r["last"], "local_id": r["local_id"],
+                                   "renamed": r.get("renamed", False),
+                                   "parent": r.get("parent", ""), "kind": r.get("kind", "")}
                              for sid, r in reg.items()}}
     empty = {"generated_at": 0, "sessions": {}}
     try:
@@ -439,8 +443,8 @@ def scan_rooms(show_all=False):
         rid = next((assigned[x] for x in sids if x in assigned), None)
         reg = sessions.get(rid) if rid else None
         archived = bool(reg and reg.get("archived"))
-        if reg and reg.get("title") and not fi.get("custom_title"):
-            # custom-title 是桌面 app 當下顯示的名字，比快照裡的舊標題新
+        if reg and reg.get("title") and (reg.get("renamed") or not fi.get("custom_title")):
+            # 檔頭的 custom-title 是開對話時的名字；桌面改名只會往檔尾追加，所以本人在桌面改過名就以登錄檔為準
             room["title"] = reg["title"]
         # 來源規則（先不管封存）
         if any(x in app_sids for x in sids):
@@ -474,6 +478,9 @@ def scan_rooms(show_all=False):
         room["desktop"] = bool(reg)                      # 桌面 app 登錄裡有它
         room["app"] = any(x in app_sids for x in sids)   # 是從手機開的
         room["busy"] = (time.time() - fi["mtime"]) < BUSY_WINDOW   # 桌面那邊正在寫＝工作中
+        if reg:
+            room["_local"], room["_parent"], room["_desk"] = reg.get("local_id"), reg.get("parent"), reg.get("title", "")
+            room["child_kind"] = reg.get("kind") or ""   # fork（手動分出）／side（旁開的子任務）
         rooms.append(room)
 
     for extra in codex_rooms() + api_rooms():
@@ -492,8 +499,29 @@ def scan_rooms(show_all=False):
         room["perm"] = any(x in perm_sids for x in (room.get("gen_sids") or [room["sid"]]))
         room["ask"] = any(x in ask_sids for x in (room.get("gen_sids") or [room["sid"]]))
         t = titles.get(room["sid"])
-        if t:
-            room["title"] = t
+        if isinstance(t, str):   # 舊格式：沒記桌面名字，手機改的一律優先
+            t = {"title": t, "desk": None}
+        desk = room.pop("_desk", None)
+        if t and t.get("title") and (t.get("desk") is None or desk is None or desk == t["desk"]):
+            room["title"] = t["title"]
+    # 子對話對到父對話那間房，手機才排得到它正下方；父對話被封存不在清單裡就只留標題
+    by_local = {r["_local"]: r for r in rooms if r.get("_local")}
+    # 桌面對話 /clear 前的舊段落（登錄檔已經換到新紀錄檔）：併回同一間，名字跟著桌面走
+    gens = desktop_gens()
+    for room in [r for r in rooms if not r.get("_local") and r.get("engine") == "claude"]:
+        cur = by_local.get(gens.get(room["sid"]))
+        if cur and cur is not room:
+            cur["gen_sids"] = (cur.get("gen_sids") or [cur["sid"]]) + (room.get("gen_sids") or [room["sid"]])
+            cur["generations"] = len(cur["gen_sids"])
+            rooms.remove(room)
+    reg_titles = {s.get("local_id"): s.get("title", "") for s in sessions.values() if s.get("local_id")}
+    for room in rooms:
+        room.pop("_local", None)
+        pl = room.pop("_parent", None)
+        if pl:
+            p = by_local.get(pl)
+            room["parent_sid"] = p["sid"] if p else ""
+            room["parent_title"] = p["title"] if p else reg_titles.get(pl, "")
     rooms.sort(key=lambda r: r["last_epoch"], reverse=True)
     return rooms[: (900 if show_all else MAX_ROOMS + 120)]
 

@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from .config import HOME
+from .config import BASE, HOME
 from .jsonl import _clean_title
 
 # ---------- 桌面 app 的 session 登錄 ----------
@@ -31,8 +31,35 @@ def _desktop_reg_dirs():
     return [p for p in cands if p.is_dir()]
 
 
+# 看過的「cli 紀錄檔 → 桌面對話 local_id」對照。桌面對話每次 /clear（交接）都換新紀錄檔，
+# 登錄檔只記最新那個；舊的那段靠這份對照才知道是哪個對話的前一段，手機才能併回同一間、沿用同一個名字。
+GENS_FILE = BASE / "desktop-gens.json"
+_gens = {"data": None}
+
+
+def desktop_gens():
+    if _gens["data"] is None:
+        try:
+            _gens["data"] = json.loads(GENS_FILE.read_text("utf-8"))
+        except (OSError, ValueError):
+            _gens["data"] = {}
+    return _gens["data"]
+
+
+def _remember_gens(reg):
+    g = desktop_gens()
+    new = {cli: e["local_id"] for cli, e in reg.items() if g.get(cli) != e["local_id"]}
+    if not new:
+        return
+    g.update(new)
+    tmp = GENS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(g), "utf-8")
+    os.replace(tmp, GENS_FILE)
+
+
 def desktop_registry():
-    """cli session id -> {local_id, title, archived, cwd, last(epoch 秒)}；沒有桌面 app 就是空 dict。
+    """cli session id -> {local_id, title, archived, cwd, last(epoch 秒), parent(父對話 local_id), kind(fork/side/"")}；
+    沒有桌面 app 就是空 dict。
     400 多個登錄檔每 5 秒全部重讀要 0.36 秒（手機列清單八成時間都在這）——改成按 (mtime, size) 只重讀有變的檔。"""
     now = time.time()
     if now - _desktop_reg_cache["at"] < DESKTOP_REG_TTL:
@@ -62,18 +89,29 @@ def desktop_registry():
             local_id = d.get("sessionId") or f.stem
             cli = d.get("cliSessionId") or local_id.replace("local_", "", 1)
             last = d.get("lastActivityAt") or d.get("createdAt") or 0
+            # 子對話（2026-10 桌面版起）：手動 fork 記 forkedFromSessionId、旁開的子任務記 spawnedFrom，值是父對話的 local_ id
+            spawned = d.get("spawnedFrom") if isinstance(d.get("spawnedFrom"), dict) else {}
+            fork = d.get("forkedFromSessionId") or ("" if not spawned.get("userFork") else spawned.get("sessionId"))
             entry = {
                 "local_id": local_id,
                 "title": _clean_title(d.get("title") or ""),
                 "archived": bool(d.get("isArchived")),
                 "cwd": d.get("cwd") or "",
                 "last": (last / 1000.0) if isinstance(last, (int, float)) else 0,
+                "renamed": d.get("titleSource") == "user",   # 使用者在桌面改過名：手機要跟著換
+                "parent": fork or spawned.get("sessionId") or "",
+                "kind": "fork" if fork else "side" if spawned.get("sessionId") else "",
             }
             _desktop_reg_files[key] = (st.st_mtime_ns, st.st_size, cli, entry)
             out[cli] = entry
     for k in [k for k in _desktop_reg_files if k not in seen]:
         del _desktop_reg_files[k]
     _desktop_reg_cache.update(at=now, data=out)
+    try:
+        _remember_gens(out)
+    except OSError as e:   # 對照表寫不進去只影響舊段落歸位，清單照常
+        from .config import log
+        log.warning("desktop-gens.json 寫不進去：%s", e)
     return out
 
 

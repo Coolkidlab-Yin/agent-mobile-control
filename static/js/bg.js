@@ -6,7 +6,7 @@
    對話在背景跑的指令／子代理／工作流程，手機原本看不到，只會覺得「怎麼卡住了」。
    開著房間時每 5 秒問一次伺服器（伺服器是增量讀紀錄，便宜）；頂端一條狀態列，點開看清單與最近輸出。 */
 let bgTimer = null, bgData = [], bgNow = 0;
-const BG_KIND = { bash: "⌘ 指令", agent: "🤖 子代理", workflow: "🧩 工作流程" };
+const BG_KIND = { bash: icon("terminal") + "指令", agent: icon("bot") + "子代理", workflow: icon("flow") + "工作流程" };
 const BG_STATUS = { running: "進行中", completed: "完成", failed: "失敗", killed: "已停止", stopped: "已停止", unknown: "狀態不明" };
 function bgAgo(sec) {
   sec = Math.max(0, Math.round(sec));
@@ -33,8 +33,8 @@ function renderBg() {
   // 進行中的任務裡最久沒動靜的那個：這通常就是「為什麼卡住」的答案
   const quiet = run.length ? Math.max(...run.map((t) => bgNow - (t.last || t.started))) : 0;
   chip.classList.toggle("quiet", quiet > 120);
-  chip.textContent = run.length
-    ? "⏳ " + run.length + " 個背景任務進行中" + (quiet > 120 ? "，最久已 " + bgAgo(quiet) + "沒動靜" : "") + " ›"
+  chip.innerHTML = run.length
+    ? icon("clock") + run.length + " 個背景任務進行中" + (quiet > 120 ? "，最久已 " + bgAgo(quiet) + "沒動靜" : "") + " ›"
     : "背景任務 " + bgData.length + " 個，都已結束 ›";
   if (!$("#sheet-bg").classList.contains("hidden")) renderBgSheet();
 }
