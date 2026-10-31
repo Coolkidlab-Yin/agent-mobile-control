@@ -25,6 +25,37 @@ import uvicorn
 from claude_chat.api import app
 from claude_chat.config import CLAUDE_ARGV, LOG_FILE, PORT, bind_hosts, log
 
+LISTENER_CHECK_S = 30
+
+
+def _config(host, lifespan):
+    return uvicorn.Config(app, host=host, port=PORT, log_config=None, access_log=False, lifespan=lifespan)
+
+
+async def _refused(host):
+    """自己連一下：被拒＝這個位址已經沒人在聽。慢、逾時、網路怪都不算（伺服器忙時系統照樣先接下連線）。"""
+    try:
+        _, w = await asyncio.wait_for(asyncio.open_connection(host, PORT), 5)
+    except ConnectionRefusedError:
+        return True
+    except (OSError, asyncio.TimeoutError):
+        return False
+    w.close()
+    return False
+
+
+async def _serve(host, lifespan="auto"):
+    """跑 uvicorn；監聽被關掉就在同一個位址補開一個（啟動程序不重跑）。
+    Windows 的 Proactor 在接連線時遇到任何 OSError（例如客戶端排隊時先斷線的 WinError 64）就把監聽 socket 關掉、
+    不再重開（asyncio/proactor_events.py）：那個位址從此連不上，行程卻還活著，看門狗看不出來。"""
+    task = asyncio.ensure_future(uvicorn.Server(_config(host, lifespan)).serve())
+    while not task.done():
+        await asyncio.wait({task}, timeout=LISTENER_CHECK_S)
+        if not task.done() and await _refused(host):
+            log.warning("%s:%s 的監聽被關掉了，補開一個", host, PORT)
+            asyncio.ensure_future(uvicorn.Server(_config(host, "off")).serve())
+    await task
+
 # ---------- 進入點 ----------
 
 def main():
@@ -44,13 +75,7 @@ def main():
     log.info("claude-chat starting on %s:%s (claude=%s)", hosts, PORT, CLAUDE_ARGV)
 
     async def serve_all():
-        servers = []
-        for h in hosts:
-            cfg = uvicorn.Config(app, host=h, port=PORT,
-                                 log_config=None, access_log=False)
-            srv = uvicorn.Server(cfg)
-            servers.append(srv.serve())
-        await asyncio.gather(*servers)
+        await asyncio.gather(*(_serve(h) for h in hosts))
 
     try:
         asyncio.run(serve_all())
