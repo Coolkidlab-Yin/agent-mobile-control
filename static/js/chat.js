@@ -82,8 +82,34 @@ function startWatch() {
   tick();
 }
 
+/* 草稿按房間分開放：輸入框與附件全部房間共用一個，不分開的話 A 房打到一半的字、選好的圖會跟著切到 B 房 */
+const drafts = {};
+const draftKey = (r) => r.sid || "new:" + (r.project || "");
+function stashDraft() {
+  stopRec(true);
+  if (!current) return;
+  const k = draftKey(current);
+  if (inputEl.value.trim() || attachments.length) drafts[k] = { text: inputEl.value, attachments };
+  else delete drafts[k];
+  inputEl.value = "";
+  attachments = [];
+  renderAttachStrip();
+  autoGrow();
+}
+function restoreDraft() {
+  const d = drafts[draftKey(current)];
+  if (!d) return;
+  delete drafts[draftKey(current)];
+  inputEl.value = d.text;
+  attachments = d.attachments;
+  renderAttachStrip();
+  autoGrow();
+}
+
 function openRoom(room, fromPop) {
+  stashDraft();
   current = Object.assign({}, room);
+  restoreDraft();
   toolChips = {};
   $("#chat-title").textContent = room.title || "新聊天室";
   setSub("");
@@ -123,6 +149,7 @@ function closeRoom() {
   chatScreen.classList.add("hidden-right");
   stopWatch();
   detachRun(false);
+  stashDraft();
   current = null;
   loadRooms(true);
 }
@@ -341,6 +368,8 @@ async function sendMsg() {
   let text = inputEl.value.trim();
   if ((!text && !attachments.length) || !current) return;
   if (activeRun && !activeRun.peer) return;
+  stopRec(true);
+  const room = current;
   const interrupting = !!(activeRun && activeRun.peer);
   if (attachments.some((a) => a.uploading)) { sysNote("圖片還在上傳，等一下再送"); return; }
   const paths = attachments.map((a) => a.path).filter(Boolean);
@@ -375,12 +404,14 @@ async function sendMsg() {
       body: JSON.stringify(body),
     });
     lastSend = null;
+    // 等回應時切到別的房：工作照跑，回原房時開房會自己接上；在這裡接，原房的事件流會畫進新房
+    if (current !== room) return;
     if (r.dedup) sysNote("這句剛才已經送出過，接回同一個工作");
     if (interrupting && activeRun && r.run_id === activeRun.id) return; // 插話：同一條事件流繼續看
     attachRun(r.run_id, 0, false, r.peer);
   } catch (e) {
-    hideTyping();
-    sysNote("送不出去：" + e.message, true);
+    if (current === room) hideTyping();
+    sysNote((current === room ? "" : "「" + (room.title || "上一個對話") + "」") + "送不出去：" + e.message, true);
   }
 }
 
@@ -566,8 +597,13 @@ if (window.visualViewport) {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, recBase = "";
 
-function stopRec() {
-  if (rec) { try { rec.stop(); } catch (e) { /* ignore */ } rec = null; }
+function stopRec(discard) {
+  // discard：送出或切房時用。stop() 之後還會再補一次最後結果，把剛送出的字整段填回輸入框（再切房就帶到別房）
+  if (rec) {
+    if (discard) rec.onresult = null;
+    try { discard ? rec.abort() : rec.stop(); } catch (e) { /* ignore */ }
+    rec = null;
+  }
   $("#btn-mic").classList.remove("rec");
 }
 

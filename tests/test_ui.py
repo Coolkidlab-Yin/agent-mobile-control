@@ -536,3 +536,60 @@ def test_quota_button_only_for_claude_rooms(page):
     page.evaluate("current.engine = 'claude'")
     n = page.evaluate(FINISH_AND_COUNT, QUOTA_ERR)
     assert n == 1
+
+
+# ---------- 切房不帶東西過去（A 房送出後切到 B 房，A 的指令不能跟著跑到 B） ----------
+def test_send_in_flight_then_switch_room_does_not_attach_run_to_new_room(page):
+    """送出要等伺服器回（Tailscale 常要好幾秒）；這段時間切到別房，回來的 run 不能接進新房的畫面。"""
+    held = []
+    page.route("**/api/send", lambda route: held.append(route))
+    page.route("**/api/run/fake*/events*", lambda route: route.fulfill(
+        status=200, headers={"Content-Type": "text/event-stream"}, body=""))
+    open_room(page)
+    page.locator("#input").fill("A 房的指令")
+    page.locator("#btn-send").click()
+    page.wait_for_function("document.querySelectorAll('#messages .msg.user').length >= 1")
+    # 切到 B 房（新聊天室），A 的送出還卡在半路
+    page.evaluate("openRoom({slug: null, sid: null, engine: 'claude', title: 'B 房', project: current.project, "
+                  "project_name: current.project_name})")
+    expect(page.locator("#chat-title")).to_have_text("B 房")
+    for _ in range(50):
+        if held:
+            break
+        page.wait_for_timeout(50)
+    held[0].fulfill(json={"run_id": "fakeA"})
+    page.wait_for_timeout(400)
+    assert page.evaluate("activeRun") is None
+    assert page.evaluate("document.querySelectorAll('#messages .msg.user').length") == 0
+    expect(page.locator("#btn-send")).to_be_visible()
+
+
+def test_draft_and_attachments_stay_with_their_room(page):
+    open_room(page)
+    page.locator("#input").fill("A 房打到一半")
+    page.evaluate("attachments = [{path: 'C:/x/a.png', name: 'a.png', url: '/static/icon-192.png'}]; renderAttachStrip()")
+    page.evaluate("openRoom({slug: null, sid: null, engine: 'claude', title: 'B 房', project: current.project, "
+                  "project_name: current.project_name})")
+    assert page.locator("#input").input_value() == ""
+    assert page.evaluate("attachments.length") == 0
+    page.locator("#input").fill("B 房的字")
+    page.evaluate("history.back()")   # 回清單，再開 A 房
+    page.wait_for_function("current === null")
+    open_room(page)
+    assert page.locator("#input").input_value() == "A 房打到一半"
+    assert page.evaluate("attachments.length") == 1
+
+
+def test_send_discards_pending_dictation(page):
+    """語音辨識 stop() 後還會補一次結果，把剛送出的整段字填回輸入框；送出要直接丟掉。"""
+    page.route("**/api/send", lambda route: route.fulfill(json={"run_id": "fakeV"}))
+    page.route("**/api/run/fake*/events*", lambda route: route.fulfill(
+        status=200, headers={"Content-Type": "text/event-stream"}, body=""))
+    open_room(page)
+    page.evaluate("window.fakeRec = {onresult: () => { inputEl.value = '剛送出的字'; }, aborted: false, "
+                  "abort() { this.aborted = true; }, stop() {}}; rec = window.fakeRec")
+    page.locator("#input").fill("剛送出的字")
+    page.locator("#btn-send").click()
+    page.wait_for_function("document.querySelectorAll('#messages .msg.user').length >= 1")
+    assert page.evaluate("fakeRec.aborted && fakeRec.onresult === null && rec === null")
+    assert page.locator("#input").input_value() == ""
