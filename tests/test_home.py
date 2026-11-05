@@ -52,7 +52,7 @@ def test_done_badge_only_for_a_recent_successful_run():
 
 
 def test_last_reply_that_asks_something_waits_in_todo_until_acked():
-    """本人 10-06 要的：Claude 最後一句在等你回話的對話留在待處理，按「沒事了」才進已完成；有新回覆再出現。"""
+    """使用者要的：Claude 最後一句在等你回話的對話留在待處理，按「沒事了」才進已完成；有新回覆再出現。"""
     room = {"last_role": "ai", "last_tail": "改好了，都驗過了。要推上去嗎？", "last_epoch": NOW - 100}
     assert cls(room=room) == ("todo", "等你回話", "next", "要推上去嗎？")
     assert cls(room=dict(room, last_tail="改好了，都驗過了。")) == ("done", "", "none", "")
