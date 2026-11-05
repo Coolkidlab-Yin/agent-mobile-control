@@ -27,7 +27,7 @@ from .config import (
 )
 from .desktop import desktop_gens, desktop_registry
 from .jsonl import _clean_title, _head_info, _iso_epoch, _loads, _norm_cwd, _project_name, _slug_encode, _tail_info
-from .perm import pending_perms
+from .perm import open_perms
 from .procs import _pid_alive
 from .runs import BY_SESSION
 
@@ -491,7 +491,7 @@ def scan_rooms(show_all=False):
         rooms.append(extra)
 
     titles = load_titles()
-    _pp = pending_perms()
+    _pp = open_perms()
     perm_sids = {p["sid"] for p in _pp if p["tool"] != "AskUserQuestion"}
     ask_sids = {p["sid"] for p in _pp if p["tool"] == "AskUserQuestion"}
     for room in rooms:

@@ -74,6 +74,7 @@ from .perm import (
     WAITER_GONE_S,
     _perm_card,
     _perm_key,
+    open_perms,
     pending_perms,
     persist_perm,
     refresh_desktop_answer,
@@ -420,7 +421,7 @@ def history(slug: str, sid: str, before: int | None = None, limit: int = 120):
                    "peer": bool(getattr(run, "peer", False))} if run else None)
     # 等著的授權／選擇題卡也一起回：手機開房時若這房有即時連線，只會從 n_events 之後接事件，
     # 早就開著的卡片只住在 PERMS 裡，不補這裡就只看得到轉圈圈的 AskUserQuestion、沒有卡（10-06）
-    out["pending"] = pending_perms(sid) if not eng else []
+    out["pending"] = open_perms(sid) if not eng else []
     out["answered"] = pending_perms(sid, answered=True) if not eng else []
     # 上一輪若是在伺服器重啟時中斷的，手機開房要說一聲，不然看起來像它自己停了
     try:
@@ -526,7 +527,7 @@ def tail(slug: str, sid: str, offset: int = 0):
     items, new_off = tail_items(f, max(0, offset))
     return {"items": items, "offset": new_off, "busy": _room_busy(f),
             "live": live_peer_for(sid) is not None, "running": _attachable_run(sid) is not None,
-            "pending": pending_perms(sid), "answered": pending_perms(sid, answered=True)}
+            "pending": open_perms(sid), "answered": pending_perms(sid, answered=True)}
 
 
 @app.get("/api/bg/{slug}/{sid}")
@@ -787,6 +788,7 @@ async def perm_answer(perm_id: str, body: PermAnswerBody):
         run.allow_all = True
     p["answer"] = "allow" if body.decision == "allow_all" else body.decision
     p["by"] = body.by if body.by in ("desktop", "timeout") else "phone"
+    p["answered_at"] = time.time()
     p["answers"] = {str(k)[:500]: str(v)[:500] for k, v in (body.answers or {}).items()}
     p["free_text"] = (body.free_text or "")[:2000]
     store.pending_answer(perm_id, {"decision": p["answer"], "answers": p["answers"], "free_text": p["free_text"]}, p["by"])

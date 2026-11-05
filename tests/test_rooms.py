@@ -1,8 +1,11 @@
 """聊天室清單：可見／隱藏規則、compact 世代合併、路徑參數防跳目錄。所有磁碟位置都指到暫存目錄。"""
+import time
+
 import pytest
 from fastapi import HTTPException
 from helpers import assistant, write_jsonl
 
+from claude_chat import perm as P
 from claude_chat import rooms as R
 
 SID_A = "aaaaaaaa-0000-0000-0000-000000000001"
@@ -17,7 +20,7 @@ def sandbox(tmp_path, monkeypatch):
         monkeypatch.setattr(R, name, tmp_path / name.lower())
     monkeypatch.setattr(R, "PROJECTS_DIR", proj)
     monkeypatch.setattr(R, "desktop_registry", lambda: {})
-    monkeypatch.setattr(R, "pending_perms", lambda *a, **k: [])
+    monkeypatch.setattr(R, "open_perms", lambda *a, **k: [])
     R._room_cache.clear()
     for cache in (R._app_sids_cache, R._titles_cache, R._overlay_cache, R._snap_cache):
         cache["mtime"] = None
@@ -134,3 +137,21 @@ def test_phone_rename_holds_until_the_desktop_renames_again(sandbox, monkeypatch
     reg[SID_A] = dict(reg[SID_A], title="桌面後來又改")   # 最後改的贏
     R._room_cache.clear()
     assert R.scan_rooms()[0]["title"] == "桌面後來又改"
+
+
+def test_room_flags_ignore_cards_whose_hook_is_gone(sandbox, monkeypatch):
+    """清單上的「等你授權」只看 hook 還活著的卡：伺服器重啟、桌面對話關了的卡按了也沒人收（11-05）。"""
+    mk_room(sandbox, "C--work-p1", SID_A, "claude-desktop", "甲")
+    mk_room(sandbox, "C--work-p1", SID_B, "claude-desktop", "乙")
+    monkeypatch.setattr(R, "open_perms", P.open_perms)
+    monkeypatch.setattr(P, "_desktop_answered", lambda p: None)
+    now = time.time()
+    base = {"tool": "Bash", "detail": "", "preview": "", "reason": "", "answer": None, "by": "", "run_id": None}
+    P.PERMS.clear()
+    P.PERMS["alive"] = dict(base, sid=SID_A, created=now - 7200, last_poll=now - 3)
+    P.PERMS["gone"] = dict(base, sid=SID_B, created=now - 7200, last_poll=now - 300)
+    try:
+        rooms = {r["sid"]: r for r in R.scan_rooms()}
+        assert rooms[SID_A]["perm"] is True and rooms[SID_B]["perm"] is False
+    finally:
+        P.PERMS.clear()

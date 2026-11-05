@@ -11,9 +11,10 @@ log = logging.getLogger("claude-chat")
 
 # ---------- 逐項授權（先問我模式 ＋ 桌面 session 的危險指令也能在手機按） ----------
 PERMS = {}  # perm_id -> {"run_id"|None, "sid", "tool", "detail", "preview", "reason", "answer", "created"}
-PERM_TTL = 60 * 60          # 沒人理的授權卡幾秒後不再列出（hook 那邊最多等 55 分鐘）
+PERM_TTL = 25 * 60 * 60     # 沒人理的授權卡幾秒後不再列出。桌面確認框沒有時限，hook（mods/perm）等 24 小時，這裡要比它長（11-05）
+ANSWERED_KEEP_S = 60 * 60   # 答過的卡再留一小時讓手機鎖卡片，之後從記憶體清掉（state.sqlite 裡還在）
 WAITER_GONE_S = 40          # 等待程式（hook／MCP）每輪最多 20 秒來問一次；兩輪沒來＝它已經不在了
-_RUNTIME_KEYS = ("checked", "scan_from", "last_poll")   # 只活在記憶體、不落地的欄位
+_RUNTIME_KEYS = ("checked", "scan_from", "scan_stat", "last_poll", "answered_at")   # 只活在記憶體、不落地的欄位
 
 
 def _perm_card(perm_id, p):
@@ -21,7 +22,7 @@ def _perm_card(perm_id, p):
             "preview": p["preview"], "reason": p["reason"], "sid": p.get("sid"),
             "source": "desktop" if p.get("run_id") is None else "phone", "created": p["created"],
             "answer": p.get("answer"), "by": p.get("by") or "", "questions": p.get("questions"),
-            "last_poll": p.get("last_poll")}
+            "last_poll": p.get("last_poll"), "waiter_gone": waiter_gone(p)}
 
 
 def waiter_gone(p, now=None):
@@ -73,7 +74,11 @@ def _desktop_answered(p):
     if not g:
         return None
     try:
-        size = g[0].stat().st_size
+        st = g[0].stat()
+        size = st.st_size
+        # 檔案沒動過就不用再翻：卡片可以開一整天，每 2 秒重讀 1MB 會白耗 CPU（11-05）
+        if p.get("scan_stat") == (size, st.st_mtime_ns):
+            return None
         # 固定只翻檔尾 256KB 在忙碌的對話會漏：10-01 一個 7.9MB 的 session，卡片建立後又長了 1MB，
         # 桌面早答過的 tool_result 落在窗口外，卡片就掛滿一小時、手機跳「好幾步前」的題。
         # 改成第一次對帳時記下當時檔尾往前 1MB 的位置，之後一律從那裡讀到檔尾，檔案再長都涵蓋得到。
@@ -83,6 +88,7 @@ def _desktop_answered(p):
         with open(g[0], "rb") as f:
             f.seek(start)
             lines = f.read().decode("utf-8", "replace").splitlines()
+        p["scan_stat"] = (size, st.st_mtime_ns)
     except OSError:
         return None
     use_id = None
@@ -112,7 +118,7 @@ def refresh_desktop_answer(p, now=None, pid=None):
         p["checked"] = now
         d = _desktop_answered(p)
         if d:
-            p["answer"], p["by"] = d, "desktop"
+            p["answer"], p["by"], p["answered_at"] = d, "desktop", now
             if pid:
                 try:
                     store.pending_answer(pid, {"decision": d}, "desktop")
@@ -125,7 +131,8 @@ def pending_perms(sid=None, answered=False):
     now = time.time()
     out = []
     for pid, p in list(PERMS.items()):
-        if now - p["created"] > PERM_TTL:
+        done_for = now - p.get("answered_at", p["created"]) if p["answer"] is not None else 0
+        if now - p["created"] > PERM_TTL or done_for > ANSWERED_KEEP_S:
             PERMS.pop(pid, None)
             continue
         refresh_desktop_answer(p, now, pid=pid)
@@ -135,3 +142,9 @@ def pending_perms(sid=None, answered=False):
             continue
         out.append(_perm_card(pid, p))
     return out
+
+
+def open_perms(sid=None):
+    """還在等人按、等待程式也還活著的卡：房間裡要畫的、清單上「等你授權／等你回答」看的就是這些。
+    等待程式已死的卡（伺服器重啟、桌面對話關了、hook 放棄）只留給 /api/pending 標 waiter_gone——按了也沒人收。"""
+    return [c for c in pending_perms(sid) if not c["waiter_gone"]]

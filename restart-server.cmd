@@ -3,9 +3,12 @@ rem Restart the claude-chat server: kill only the pythonw.exe whose command line
 rem this repo's folder (never "whoever is listening on the port"), start it again via
 rem start-server.cmd, then print the new process start time as proof.
 rem A health-check 200 alone is NOT proof of a restart - a stale process answers 200 too.
+rem Refuses while a desktop permission/question card is still being polled by its hook: the restart would kill
+rem the hook (the desktop dialog keeps waiting, the phone card vanishes). Answer the cards first, or: restart-server.cmd force
 setlocal
 set "HERE=%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "if ('%~1' -ne 'force') { try { $pend = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 http://127.0.0.1:8899/api/pending).Content | ConvertFrom-Json; if ($pend.n_open -gt 0) { 'NOT RESTARTED: ' + $pend.n_open + ' card(s) still waiting on the phone. Answer them first, or run: restart-server.cmd force'; exit 2 } } catch {} };" ^
   "$here = $env:HERE.TrimEnd('\');" ^
   "$ps = Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($here, [StringComparison]::OrdinalIgnoreCase) -ge 0 };" ^
   "foreach ($p in $ps) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue };" ^
@@ -13,6 +16,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ok = $false; for ($i = 0; $i -lt 20; $i++) { Start-Sleep 1; try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 http://127.0.0.1:8899/api/health; if ($r.StatusCode -eq 200) { $ok = $true; break } } catch {} };" ^
   "Get-CimInstance Win32_Process -Filter \"Name='pythonw.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($here, [StringComparison]::OrdinalIgnoreCase) -ge 0 } | ForEach-Object { 'pid=' + $_.ProcessId + ' started=' + $_.CreationDate };" ^
   "if ($ok) { 'health OK - check that the started= time above is NOW' } else { 'health FAILED' }"
+if errorlevel 2 exit /b 2
 rem Wait for a key when double-clicked so the result stays readable. Not pause: pause hangs
 rem forever when run without a console (background shells); timeout.exe exits at once there.
 rem Full path on purpose: from Git Bash, plain 'timeout' resolves to the coreutils one.

@@ -139,6 +139,7 @@ def test_history_returns_pending_and_answered_desktop_cards(client, tmp_path, mo
                      "questions": [{"question": "推不推？"}]}
     P.PERMS["p2"] = dict(P.PERMS["p1"], answer="allow", by="desktop")
     P.PERMS["p3"] = dict(P.PERMS["p1"], sid="other-session")        # 別的房的卡不混進來
+    P.PERMS["p4"] = dict(P.PERMS["p1"], created=_t.time() - 300)   # hook 不在了（5 分鐘沒來輪詢）：房間裡不畫，按了也沒人收
     try:
         d = client.get("/api/history/slug/" + sid).json()
         assert [p["perm_id"] for p in d["pending"]] == ["p1"] and d["pending"][0]["questions"][0]["question"] == "推不推？"
